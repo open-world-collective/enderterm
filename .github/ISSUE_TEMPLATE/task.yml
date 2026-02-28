@@ -1,0 +1,29 @@
+name: Task
+description: Internal work item (cleanup, docs, refactors, chores)
+title: "task: "
+labels:
+  - "type:chore"
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What
+      description: What needs to be done?
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: How do we know this is finished?
+    validations:
+      required: true
+  - type: textarea
+    id: test
+    attributes:
+      label: Test / validation
+      description: |
+        How should a reviewer validate this? If visual, include a `--test-banner` command.
+    validations:
+      required: false
+

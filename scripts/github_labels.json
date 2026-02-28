@@ -1,0 +1,17 @@
+[
+  { "name": "prio:P0", "color": "b60205", "description": "Urgent / blocks demo" },
+  { "name": "prio:P1", "color": "d93f0b", "description": "High priority" },
+  { "name": "prio:P2", "color": "fbca04", "description": "Normal priority" },
+
+  { "name": "type:bug", "color": "d73a4a", "description": "Bug / incorrect behavior" },
+  { "name": "type:feat", "color": "a2eeef", "description": "New feature / capability" },
+  { "name": "type:chore", "color": "cfd3d7", "description": "Chore / cleanup / docs" },
+
+  { "name": "area:termui", "color": "1d76db", "description": "Terminal-style UI / panels / widgets" },
+  { "name": "area:worldgen", "color": "0e8a16", "description": "Worldgen JSON / jigsaw / template pools" },
+  { "name": "area:render", "color": "5319e7", "description": "Rendering / shaders / perf" },
+  { "name": "area:packaging", "color": "0052cc", "description": "Builds, packaging, distribution" },
+  { "name": "area:tests", "color": "006b75", "description": "Tests / CI" },
+
+  { "name": "needs-qarl-eyeball", "color": "f9d0c4", "description": "Requires qarl to visually validate (include --test-banner command)" }
+]

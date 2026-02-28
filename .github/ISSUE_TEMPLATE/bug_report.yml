@@ -1,0 +1,56 @@
+name: Bug report
+description: Something is broken or incorrect
+title: "bug: "
+labels:
+  - "type:bug"
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What’s wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Repro steps / command
+      description: |
+        Paste the exact steps or a single command line. If this is a visual/eyeball bug, include `--test-banner 'TEST: …'`.
+      placeholder: |
+        python -m enderterm datapack-view path/to/pack.zip --test-banner 'TEST: …'
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Build / version
+      description: |
+        Paste the build id (shown in the banner) or output of `python -m enderterm --version`.
+      placeholder: "e.g. v0.0.0-123-gabc1234 (or similar git describe)"
+    validations:
+      required: false
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: OS, Python version, GPU, etc.
+      placeholder: |
+        macOS 14.x
+        Python 3.11.x
+        Apple M2
+    validations:
+      required: false
+

@@ -1,0 +1,40 @@
+# Secrets
+.env*
+
+# OS/editor noise
+.DS_Store
+.fuse_hidden*
+.vscode/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Logs / pids
+*.log
+*.pid
+
+# EnderTerm outputs
+*.usdz
+*.usd
+*.usda
+*.usdc
+(A Document Being Saved By usdzip*)
+
+# EnderTerm editable overlay (local)
+enderterm/work-pack/
+
+# Codex/Jimmy local state
+.Jimmy/
+
+# Local agent instructions
+AGENTS.md

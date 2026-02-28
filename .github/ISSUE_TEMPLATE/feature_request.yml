@@ -1,0 +1,35 @@
+name: Feature request
+description: Propose a change or new capability
+title: "feat: "
+labels:
+  - "type:feat"
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What do we want to enable?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: Why is this valuable (demo, UX, correctness, performance)?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope / acceptance criteria
+      description: Bullet list of what “done” means.
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes / references
+      description: Links, screenshots, similar tools, etc.
+    validations:
+      required: false
+
