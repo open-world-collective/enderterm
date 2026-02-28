@@ -13,6 +13,12 @@ from ctypes import c_float
 from typing import Any
 
 from enderterm import fx as fx_mod
+from enderterm.clip_defaults import (
+    CLIP_FAR_DEFAULT,
+    ORTHO_CLIP_NEAR_DEFAULT,
+    ORTHO_CLIP_NEAR_FLOOR,
+    PERSPECTIVE_CLIP_NEAR_DEFAULT,
+)
 
 _LIGHT0_AMBIENT = (c_float * 4)(0.2, 0.2, 0.2, 1.0)
 _LIGHT0_DIFFUSE = (c_float * 4)(0.9, 0.9, 0.9, 1.0)
@@ -324,7 +330,7 @@ def _resolve_ortho_clip_near(self: Any, *, default_near: float) -> float:
         depth_min = _compute_bounds_depth_min(self, bounds_i=bounds_i)
         if depth_min is None or not math.isfinite(depth_min):
             return clip_near
-        near_floor = 1.0e-5
+        near_floor = float(ORTHO_CLIP_NEAR_FLOOR)
         return min(float(clip_near), max(float(near_floor), float(depth_min) * 0.25))
     except Exception:
         return clip_near
@@ -357,15 +363,15 @@ def draw_world_3d(
     gl.glMatrixMode(gl.GL_PROJECTION)
     gl.glLoadIdentity()
     fovy = 55.0
-    clip_far = 5000.0
-    clip_near = 0.05
+    clip_far = float(CLIP_FAR_DEFAULT)
+    clip_near = float(PERSPECTIVE_CLIP_NEAR_DEFAULT)
     if self._ortho_enabled:
         # In ortho mode the camera can get extremely close to the scene, and a
         # fixed near-plane can start clipping/popping geometry. Prefer a near
         # plane that shrinks as the closest visible bounds approach the camera
         # (while keeping a tiny floor to avoid degeneracy).
         half_x, half_y = _compute_ortho_half_extents(distance=float(self.distance), aspect=float(aspect), fovy_deg=fovy)
-        clip_near = _resolve_ortho_clip_near(self, default_near=0.001)
+        clip_near = _resolve_ortho_clip_near(self, default_near=float(ORTHO_CLIP_NEAR_DEFAULT))
 
         gl.glOrtho(-half_x, half_x, -half_y, half_y, float(clip_near), float(clip_far))
     else:

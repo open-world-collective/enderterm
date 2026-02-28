@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 
 import pytest
+from enderterm.clip_defaults import ORTHO_CLIP_NEAR_DEFAULT
 from enderterm import geom
 from enderterm import render_world
 
@@ -259,7 +260,7 @@ def test_resolve_ortho_clip_near_uses_default_when_no_positive_corner_depth() ->
     viewer = _Viewer(effects_enabled=False)
     viewer.distance = 0.0
     viewer._pick_bounds_i = (0, 0, 0, 0, 0, 0)
-    assert render_world._resolve_ortho_clip_near(viewer, default_near=0.001) == 0.001
+    assert render_world._resolve_ortho_clip_near(viewer, default_near=ORTHO_CLIP_NEAR_DEFAULT) == ORTHO_CLIP_NEAR_DEFAULT
 
 
 def test_compute_channel_change_state_completes_and_clears_start() -> None:

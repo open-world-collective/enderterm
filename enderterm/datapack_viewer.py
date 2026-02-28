@@ -19,6 +19,7 @@ from enderterm.texture_anim import (
     frame_sheet_index,
     uses_subframes,
 )
+from enderterm.clip_defaults import ORTHO_CLIP_NEAR_DEFAULT, PERSPECTIVE_CLIP_NEAR_DEFAULT
 from enderterm.termui import (
     handoff_window_focus,
     window_has_key_focus,
@@ -5137,7 +5138,7 @@ def view_datapack_opengl(  # pragma: no cover
 
                 ox, oy, oz = self._orbit_target
                 required = 0.5
-                near = 0.001 if self._ortho_enabled else 0.05
+                near = ORTHO_CLIP_NEAR_DEFAULT if self._ortho_enabled else PERSPECTIVE_CLIP_NEAR_DEFAULT
                 for x, y, z in corners:
                     v = (x - ox, y - oy, z - oz)
                     v = self._rotate_y_deg(v, self.yaw)

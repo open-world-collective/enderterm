@@ -16,6 +16,8 @@ import secrets
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable
 
+from enderterm.clip_defaults import ORTHO_CLIP_NEAR_DEFAULT, PERSPECTIVE_CLIP_NEAR_DEFAULT
+
 
 _BAYER8: tuple[tuple[int, ...], ...] = (
     (0, 48, 12, 60, 3, 51, 15, 63),
@@ -3500,7 +3502,7 @@ def draw_model_rt_to_screen(
                 pass
 
             try:
-                default_near = 0.001 if self._ortho_enabled else 0.05
+                default_near = ORTHO_CLIP_NEAR_DEFAULT if self._ortho_enabled else PERSPECTIVE_CLIP_NEAR_DEFAULT
                 near = float(getattr(self, "_clip_near", default_near))
                 if not math.isfinite(near):
                     near = float(default_near)
