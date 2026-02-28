@@ -6,7 +6,7 @@ World interface and tooling repo for Open World Collective.
 
 - Structure/world inspection tooling
 - Datapack and world-interface workflows
-- Integration tooling around standard Minecraft clients
+- Integration tooling around standard vanilla Java clients
 
 ## Explicit non-goals (for now)
 
@@ -15,7 +15,7 @@ World interface and tooling repo for Open World Collective.
 
 ## Strategic direction
 
-Start Minecraft-compatible, then progressively separate interfaces from engine-specific assumptions.
+Start vanilla-compatible, then progressively separate interfaces from engine-specific assumptions.
 
 See [ROADMAP.md](ROADMAP.md) for milestone and architecture targets.
 

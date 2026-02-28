@@ -13,7 +13,7 @@ Deliver robust world-interface tooling that improves operational clarity today a
 ## 12-month outcomes
 
 - Reproducible tooling workflows for world operations
-- Reduced coupling to Minecraft-specific internals
+- Reduced coupling to legacy-runtime-specific internals
 - Migration map for engine-agnostic interfaces
 
 ## Legal note

@@ -1,6 +1,6 @@
 # EnderTerm Worldgen Editor (User Guide)
 
-This is the “menus and whatnot” editor for Minecraft 1.20.1 worldgen JSON inside EnderTerm. It’s built to support the viral loop: **grow → inspect → tweak → regrow**.
+This is the “menus and whatnot” editor for Java-edition 1.20.1 worldgen JSON inside EnderTerm. It’s built to support the viral loop: **grow → inspect → tweak → regrow**.
 
 ## Quickstart (the 30-second loop)
 
@@ -20,12 +20,12 @@ This is the “menus and whatnot” editor for Minecraft 1.20.1 worldgen JSON in
 
 ## Mental model: datapacks, ids, and overrides
 
-Minecraft treats worldgen data as a registry keyed by **resource id**:
+The runtime treats worldgen data as a registry keyed by **resource id**:
 
 - Resource id: `<namespace>:<path>` (example: `minecraft:overworld/continents`)
 - On disk: `data/<namespace>/<category>/<path>.json` (or `.nbt` for structures)
 
-Multiple datapacks can define the same resource id. Minecraft loads them as a stack; the topmost pack wins.
+Multiple datapacks can define the same resource id. The game loads them as a stack; the topmost pack wins.
 
 EnderTerm mirrors this with a **Pack Stack**:
 
@@ -161,7 +161,7 @@ Common causes:
 - `projection` mismatch (terrain matching vs rigid) making it fail placement rules
 - Processor list turning required blocks into air (rare, but spicy)
 
-## Getting edits into Minecraft (server/client)
+## Getting edits into a live server/client
 
 `enderterm/work-pack/` is a real datapack root (it has `pack.mcmeta`).
 

@@ -5,7 +5,7 @@ This roadmap is meant to show a credible path from prototype to durable platform
 ## Current reality
 
 - The project already ships usable tooling and integration tests.
-- The current runtime is intentionally Minecraft-compatible and pragmatic.
+- The current runtime is intentionally vanilla-compatible and pragmatic.
 - Stability and clarity are prioritized over premature rewrites.
 
 ## 30-day goals
@@ -33,7 +33,7 @@ This roadmap is meant to show a credible path from prototype to durable platform
   - Metal on Apple platforms.
   - DirectX 12 on Windows.
   - Vulkan for cross-platform targets.
-- Continue starting from Minecraft-compatible workflows while decoupling toward a broader runtime architecture.
+- Continue starting from vanilla-compatible workflows while decoupling toward a broader runtime architecture.
 
 ## Non-goals (current phase)
 

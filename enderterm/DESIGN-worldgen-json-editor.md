@@ -1,6 +1,6 @@
 # EnderTerm: Worldgen JSON Editor (Design)
 
-Goal: add a **graphical (menu/form) editor** for Minecraft worldgen JSON (1.20.1) inside EnderTerm, tightly integrated with the existing **pool “metropolis growth” viewer** and `.nbt` structure editor.
+Goal: add a **graphical (menu/form) editor** for Java-edition worldgen JSON (1.20.1) inside EnderTerm, tightly integrated with the existing **pool “metropolis growth” viewer** and `.nbt` structure editor.
 
 This is intentionally a prototype for the “next gen system”: Python + pyglet, small steps, lots of whimsy, minimal ceremony.
 
@@ -28,7 +28,7 @@ This is intentionally a prototype for the “next gen system”: Python + pyglet
 - Full “world preview” with terrain + biome simulation.
 - Server integration (push/reload/rcon) in this editor.
 - Perfect coverage of every worldgen JSON type on day one.
-- Replacing Photoshop (textures) or Minecraft (block palette building) as “the one true editor”.
+- Replacing Photoshop (textures) or the game client (block palette building) as “the one true editor”.
 
 ## Core concept: Pack Stack
 

@@ -30,7 +30,7 @@ In the terrain fragment shader:
 Rationale:
 
 - Avoids blending + sorting costs.
-- Matches “Minecraft alpha is masked” better.
+- Matches the legacy alpha-mask behavior better.
 
 ### 3) Reintroduce/standardize the stipple kValues (with clear names)
 
@@ -54,4 +54,3 @@ Rationale:
 - Add `ui.font.scale` kValue.
 - Replace hardcoded `font_size=10/12/14/...` with `base_size * ui.font.scale`.
 - Also scale layout constants that depend on text size (row height, padding, panel widths) to avoid clipping.
-

@@ -1,6 +1,6 @@
 # EnderTerm
 
-Tiny utilities for inspecting Minecraft NBT, starting with converting **structure NBT** files (datapack `data/*/structures/**/*.nbt`) into **USDZ** so you can Quick Look them.
+Tiny utilities for inspecting legacy Java NBT, starting with converting **structure NBT** files (datapack `data/*/structures/**/*.nbt`) into **USDZ** so you can Quick Look them.
 
 ## TODO
 
@@ -8,7 +8,7 @@ See `enderterm/TODO.md`.
 
 ## v0: structure `.nbt` → `.usdz`
 
-This renders each non-air block as a 1×1×1 cube with a stable flat color per block id (pool connector blocks are colored by their `pool`). Optionally, it can emit **textured** cubes using the vanilla **blockstates + model JSON** (and PNG textures) from a local Minecraft client `.jar`.
+This renders each non-air block as a 1×1×1 cube with a stable flat color per block id (pool connector blocks are colored by their `pool`). Optionally, it can emit **textured** cubes using the vanilla **blockstates + model JSON** (and PNG textures) from a local client `.jar`.
 
 ### Setup
 
@@ -39,7 +39,7 @@ Textured cubes (per-face textures):
 If auto-detection doesn’t find your client jar, pass it explicitly (or set `$MINECRAFT_JAR`):
 
 ```bash
-~/tmp/venv/enderterm/bin/python -m enderterm structure-to-usdz path/to/structure.nbt out.usdz --textured --minecraft-jar "~/Library/Application Support/minecraft/versions/1.20.1/1.20.1.jar"
+~/tmp/venv/enderterm/bin/python -m enderterm structure-to-usdz path/to/structure.nbt out.usdz --textured --minecraft-jar "/path/to/client.jar"
 ```
 
 ### View a structure in an OpenGL window
@@ -48,7 +48,7 @@ If auto-detection doesn’t find your client jar, pass it explicitly (or set `$M
 ~/tmp/venv/enderterm/bin/python -m enderterm nbt-view path/to/structure.nbt
 ```
 
-Textured (auto-enabled if a Minecraft jar is found; pass `--minecraft-jar` to specify):
+Textured (auto-enabled if a compatible client jar is found; pass `--minecraft-jar` to specify):
 
 ```bash
 ~/tmp/venv/enderterm/bin/python -m enderterm nbt-view path/to/structure.nbt --textured
@@ -68,7 +68,7 @@ Controls: left-drag rotate, middle-drag pan, scroll zoom, `R` reset, `Esc`/`Q` q
 ~/tmp/venv/enderterm/bin/python -m enderterm datapack-view path/to/datapack.zip
 ```
 
-If you omit the datapack input, `datapack-view` falls back to your local Minecraft client `.jar` (so you can browse vanilla structures):
+If you omit the datapack input, `datapack-view` falls back to your local client `.jar` (so you can browse vanilla structures):
 
 ```bash
 ~/tmp/venv/enderterm/bin/python -m enderterm datapack-view
@@ -129,7 +129,7 @@ Optional legacy (per-launch) GUI tests (targeted debugging):
 
 While in `datapack-view`, press `G` to open the **Pool Editor** window.
 
-- Full guide + Minecraft concepts: `enderterm/WORLDGEN-EDITOR.md`.
+- Full guide + worldgen concepts: `enderterm/WORLDGEN-EDITOR.md`.
 - Left pane: lists `worldgen/template_pool` JSON found in the current **pack stack** (vendor datapack(s) + writable overlay).
 - Vendor packs are treated as read-only. To edit, you must **Fork** first (copies the exact original file bytes into the work pack), then edit/save.
 - The work pack lives at `enderterm/work-pack/` (created automatically).

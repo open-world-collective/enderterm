@@ -23,4 +23,4 @@ If you are submitting a PR that needs visual validation, include one copy/paste 
 
 ## Compatibility note
 
-Assume standard Minecraft clients in near-term workflows.
+Assume standard vanilla Java clients in near-term workflows.
