@@ -17,6 +17,8 @@ World interface and tooling repo for Open World Collective.
 
 Start Minecraft-compatible, then progressively separate interfaces from engine-specific assumptions.
 
+See [ROADMAP.md](ROADMAP.md) for milestone and architecture targets.
+
 ## License
 
 `GPL-3.0-only`
