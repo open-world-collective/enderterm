@@ -241,7 +241,7 @@ def create_debug_window(
                 is_special = False
                 if "err=" in ln:
                     is_special = True
-                if ln.startswith(("selection:", "blocks:", "rez:", "filter:", "jigsaw depth:")):
+                if ln.startswith(("selection:", "blocks:", "rez:", "filter:", "pool depth:")):
                     is_special = True
 
                 color = accent if i == 0 else (fg if is_special else muted)

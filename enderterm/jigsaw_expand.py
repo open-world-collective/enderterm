@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Jigsaw expansion + rez worker helpers (extracted from nbttool_impl)."""
+"""Pool expansion + rez worker helpers (extracted from legacy nbttool_impl)."""
 
 from importlib import import_module as _import_module
 

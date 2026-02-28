@@ -201,7 +201,7 @@ def apply_jigsaw_final_states_to_blocks(
     block_entities_by_pos: dict[Vec3i, BlockEntityInstance],
     connectors: Iterable[JigsawConnector],
 ) -> None:
-    """Replace any remaining jigsaw blocks with their connector `final_state`."""
+    """Replace any remaining pool connector blocks with their `final_state`."""
 
     for c in connectors:
         existing = blocks_by_pos.get(c.pos)

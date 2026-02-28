@@ -87,7 +87,7 @@ def _main_display_height() -> int:
 
 
 def _to_quartz_xy(*, x: int, y: int) -> tuple[int, int]:
-    # nbttool smoke targets are in AppKit screen coordinates (origin bottom-left).
+    # EnderTerm smoke targets are in AppKit screen coordinates (origin bottom-left).
     # Quartz HID events use a y-flipped global space.
     h = _main_display_height()
     return (int(x), int(round(float(h) - float(y))))

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Pyglet/OpenGL datapack viewer entrypoint (extracted from nbttool_impl)."""
+"""Pyglet/OpenGL datapack viewer entrypoint (extracted from legacy nbttool_impl)."""
 
 import functools
 from collections.abc import Callable
@@ -841,7 +841,7 @@ def _build_viewer_pack_bootstrap(
     jigsaw_seeds: list[int] | None,
     cinematic: bool,
 ) -> _ViewerPackBootstrap:
-    """Build datapack + jigsaw context needed for viewer bootstrap."""
+    """Build datapack + pool context needed for viewer bootstrap."""
     dp_source = DatapackSource(datapack_path, zip_file)
     work_pack_dir = Path(__file__).resolve().parent / "work-pack"
     pack_stack = PackStack(work_dir=work_pack_dir, vendors=[dp_source])
@@ -1141,7 +1141,7 @@ def view_datapack_opengl(  # pragma: no cover
     try:
         labels = [out_rel.removesuffix(".usdz") for (out_rel, _) in items]
         # Sidebar mode (what the left list shows) is independent from what we load initially.
-        # Default to Jigsaw template pools; allow `--select` to load a structure without
+        # Default to pool templates; allow `--select` to load a structure without
         # forcing the sidebar into NBT mode.
         start_browser_mode = "pools"
         start_load_mode: Literal["pools", "structures"] = "pools"
@@ -3308,7 +3308,7 @@ def view_datapack_opengl(  # pragma: no cover
                     group=ui_group_text,
                 )
 
-                # Ender Vision overlay (V): faint debug lens for jigsaw sockets, etc.
+                # Ender Vision overlay (V): faint debug lens for pool sockets, etc.
                 self._ender_vision_active = False
                 self._jigsaw_state: JigsawExpansionState | None = None
                 self._ender_vision_by_pos: dict[Vec3i, JigsawConnector] = {}
@@ -3642,7 +3642,7 @@ def view_datapack_opengl(  # pragma: no cover
                 datapack_path: Path,
             ) -> None:
                 start_mode = str(start_browser_mode)
-                # Sidebar modes: NBT structure list vs Jigsaw template pools.
+                # Sidebar modes: NBT structure list vs pool templates.
                 if start_mode == "pools" and not pool_labels:
                     start_mode = "structures"
                 if start_mode == "structures" and not labels and pool_labels:
@@ -5578,7 +5578,7 @@ def view_datapack_opengl(  # pragma: no cover
                 if self._browser_mode == "structures":
                     self.title.text = f"NBT  {datapack_path.name}  ({len(labels)} structures)"
                     return
-                self.title.text = f"Jigsaw  {datapack_path.name}  ({len(pool_labels)} template pools)"
+                self.title.text = f"Pool  {datapack_path.name}  ({len(pool_labels)} template pools)"
 
             def _enter_dataset_browser(self) -> None:
                 if self._rez_active:
@@ -7922,7 +7922,7 @@ def view_datapack_opengl(  # pragma: no cover
 
             def _terminal_busy(self) -> bool:
                 # "Rezzing" is the umbrella state for tool-driven operations
-                # (jigsaw expansion, etc.). Environment generation is part of
+                # (pool expansion, etc.). Environment generation is part of
                 # the universe and should not lock build-mode interactions.
                 return bool(self._rez_active)
 
@@ -9874,7 +9874,7 @@ def view_datapack_opengl(  # pragma: no cover
                         lines.append("Trackpad: (gestures unavailable) scroll/wheel zoom only")
                 lines += [
                     "Keys: Up/Down select  PgUp/PgDn page  / filter  D debug  W 2nd viewport  Shift+W add viewport  K kValue  V ender vision",
-                    "Jigsaw: Right expand  Left undo  Space reroll",
+                    "Pool: Right expand  Left undo  Space reroll",
                     "Build: B toggle  LMB break / RMB place / MMB pick  1-9/0 hotbar  ⌥ camera  I palette  ⌘Z undo / ⌘⇧Z redo",
                     "View: O ortho  F frame  W toggle 2nd viewport  Shift+W add viewport  Esc/Q quit",
                     "Env: E cycle",
@@ -9900,7 +9900,7 @@ def view_datapack_opengl(  # pragma: no cover
                     f"blocks: {blocks}",
                     f"{rez_line}",
                     f"filter: {filt}  ({filt_count})",
-                    f"jigsaw depth: {depth}  {seed_line}",
+                    f"pool depth: {depth}  {seed_line}",
                 ]
                 text = "\n".join(lines)
                 if text != self._debug_panel_last_text:
@@ -10461,7 +10461,7 @@ def view_datapack_opengl(  # pragma: no cover
                 """Return (origin_u, dir_world) for a screen coordinate.
 
                 origin_u is in un-centered block coordinates (i.e. in the same
-                coordinate space as structure/jigsaw block positions).
+                coordinate space as structure/pool-connector block positions).
                 """
 
                 if x < self.sidebar_width:
@@ -11254,7 +11254,7 @@ def view_datapack_opengl(  # pragma: no cover
                     joint = _short(str(c.joint), 16)
                     facing = vec_to_dir.get(tuple(int(v) for v in c.front), "?")
                     final_state = _short(str(c.final_state), 58)
-                    lines.append(f"jigsaw: pool {pool}  target {target}")
+                    lines.append(f"pool: {pool}  target {target}")
                     lines.append(f"name {name}  joint {joint}  facing {facing}  final {final_state}   J open  Enter regrow")
                 if self._build_enabled:
                     bid = self._build_selected_block_id
@@ -12485,8 +12485,8 @@ def view_datapack_opengl(  # pragma: no cover
                     self._set_log_collapsed(not self._log_collapsed)
                     return
                 if row == list_box_y:
-                    # Box title: NBT / Jigsaw "tabs".
-                    tabs: list[tuple[str, str]] = [("NBT", "structures"), ("Jigsaw", "pools")]
+                    # Box title: NBT / Pool "tabs".
+                    tabs: list[tuple[str, str]] = [("NBT", "structures"), ("Pool", "pools")]
                     x = 2 + 2  # "[ " prefix
                     for i, (tab_name, mode) in enumerate(tabs):
                         x0 = int(x)
@@ -13696,7 +13696,7 @@ def view_datapack_opengl(  # pragma: no cover
 
                 # Box titles / tabs.
                 x_title = 2
-                tabs: list[tuple[str, str]] = [("NBT", "structures"), ("Jigsaw", "pools")]
+                tabs: list[tuple[str, str]] = [("NBT", "structures"), ("Pool", "pools")]
                 x = int(x_title)
                 surface.put(x, list_box_y, "[", fg=box_fg, bg=bg)
                 x += 1
@@ -14390,7 +14390,7 @@ def view_datapack_opengl(  # pragma: no cover
                 except Exception:
                     seeds = []
                 if len(seeds) < 1:
-                    _smoke_finish(False, "smoke: expected jigsaw depth >= 1 after expansion")
+                    _smoke_finish(False, "smoke: expected pool depth >= 1 after expansion")
                     return
 
                 main_region = _smoke_capture_region_px(win, trim_sidebar=True)

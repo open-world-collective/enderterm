@@ -878,7 +878,7 @@ DEFAULT_PARAM_HELP: dict[str, str] = {
         "Try 64–256 for smooth; 512+ for speed."
     ),
     "rez.pieces_per_s": (
-        "How fast the live rez preview shows jigsaw pieces being added.\n"
+        "How fast the live rez preview shows pool pieces being added.\n"
         "Lower values make the build feel “cinematic” and keep the UI responsive; higher values make it snap in.\n"
         "If you see stutters while rezzing, reduce this.\n"
         "Set to 0 to apply pieces as fast as they arrive (no preview throttling)."

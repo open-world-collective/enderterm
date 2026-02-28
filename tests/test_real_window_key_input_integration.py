@@ -94,7 +94,7 @@ def _main_display_width() -> int:
 
 
 def _to_quartz_xy(*, x: int, y: int) -> tuple[int, int]:
-    # nbttool's click targets come from NSWindow.convertPointToScreen_ (AppKit coordinates,
+    # EnderTerm click targets come from NSWindow.convertPointToScreen_ (AppKit coordinates,
     # origin bottom-left). Quartz events use a y-flipped global space, so convert.
     h = _main_display_height()
     return (int(x), int(round(float(h) - float(y))))

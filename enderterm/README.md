@@ -8,7 +8,7 @@ See `enderterm/TODO.md`.
 
 ## v0: structure `.nbt` → `.usdz`
 
-This renders each non-air block as a 1×1×1 cube with a stable flat color per block id (jigsaw blocks are colored by their `pool`). Optionally, it can emit **textured** cubes using the vanilla **blockstates + model JSON** (and PNG textures) from a local Minecraft client `.jar`.
+This renders each non-air block as a 1×1×1 cube with a stable flat color per block id (pool connector blocks are colored by their `pool`). Optionally, it can emit **textured** cubes using the vanilla **blockstates + model JSON** (and PNG textures) from a local Minecraft client `.jar`.
 
 ### Setup
 
@@ -93,13 +93,13 @@ Mouse:
 - Click a row to select it
 - In the 3D view: left-drag orbit, middle-drag pan, scroll zoom
 
-Jigsaw expansion controls:
-- `Right`: expand one level of all open jigsaws (randomized)
+Pool expansion controls:
+- `Right`: expand one level of all open pool connectors (randomized)
 - `Left`: undo one expansion level
 - `Space`: reroll the seed for the current expansion level (previous levels stay fixed)
 
 List modes:
-- `M`: toggle the left list between **Jigsaw** template pools (`data/*/worldgen/template_pool/**/*.json`) and **NBT** structures (`data/*/structures/**/*.nbt`).
+- `M`: toggle the left list between **Pool** templates (`data/*/worldgen/template_pool/**/*.json`) and **NBT** structures (`data/*/structures/**/*.nbt`).
 
 Optional macOS monolithic GUI smoke suite:
 - Requires a desktop session plus Accessibility permission for the Python interpreter running pytest.
@@ -127,7 +127,7 @@ Optional legacy (per-launch) GUI tests (targeted debugging):
 
 ### Worldgen JSON editor (MVP)
 
-While in `datapack-view`, press `G` to open the **Jigsaw Editor** window.
+While in `datapack-view`, press `G` to open the **Pool Editor** window.
 
 - Full guide + Minecraft concepts: `enderterm/WORLDGEN-EDITOR.md`.
 - Left pane: lists `worldgen/template_pool` JSON found in the current **pack stack** (vendor datapack(s) + writable overlay).
@@ -140,7 +140,7 @@ Editor tabs:
 
 Metropolis integration:
 - Toggle Ender Vision with `V`, hover a socket, then use hotkeys to act on it.
-- The HUD shows the selected jigsaw’s `pool/target/name/joint/final_state/facing`.
+- The HUD shows the selected pool connector’s `pool/target/name/joint/final_state/facing`.
 - `J`: Open Pool, `Enter`: Regrow with the same seed tape.
 
 Extra controls:

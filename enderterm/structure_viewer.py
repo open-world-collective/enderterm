@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Pyglet/OpenGL structure viewer entrypoint (extracted from nbttool_impl)."""
+"""Pyglet/OpenGL structure viewer entrypoint (extracted from legacy nbttool_impl)."""
 
 from importlib import import_module as _import_module
 

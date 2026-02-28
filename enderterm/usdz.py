@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""USDZ/USDA conversion + jar helpers (extracted from nbttool_impl)."""
+"""USDZ/USDA conversion + jar helpers (extracted from legacy nbttool_impl)."""
 
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -526,7 +526,7 @@ def write_usdz(usdz_path: Path, usda_text: str, *, extra_files: dict[str, bytes]
     usdz_path.parent.mkdir(parents=True, exist_ok=True)
 
     if extra_files:
-        with tempfile.TemporaryDirectory(prefix="nbttool_usdz_") as td:
+        with tempfile.TemporaryDirectory(prefix="enderterm_usdz_") as td:
             root_dir = Path(td)
             inputs = _write_scene_tree(root_dir, usda_text, extra_files=extra_files)
             usdzip = shutil.which("usdzip")
@@ -538,7 +538,7 @@ def write_usdz(usdz_path: Path, usda_text: str, *, extra_files: dict[str, bytes]
         _write_usdz_fallback_zip(usdz_path, usda_text, extra_files=extra_files)
         return
 
-    with tempfile.TemporaryDirectory(prefix="nbttool_usd_") as td:
+    with tempfile.TemporaryDirectory(prefix="enderterm_usd_") as td:
         root_dir = Path(td)
         _write_scene_tree(root_dir, usda_text, extra_files=None)
         usda_path = root_dir / "scene.usda"

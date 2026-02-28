@@ -1,6 +1,6 @@
 # EnderTerm: Worldgen JSON Editor (Design)
 
-Goal: add a **graphical (menu/form) editor** for Minecraft worldgen JSON (1.20.1) inside EnderTerm, tightly integrated with the existing **jigsaw “metropolis growth” viewer** and `.nbt` structure editor.
+Goal: add a **graphical (menu/form) editor** for Minecraft worldgen JSON (1.20.1) inside EnderTerm, tightly integrated with the existing **pool “metropolis growth” viewer** and `.nbt` structure editor.
 
 This is intentionally a prototype for the “next gen system”: Python + pyglet, small steps, lots of whimsy, minimal ceremony.
 
@@ -9,8 +9,8 @@ This is intentionally a prototype for the “next gen system”: Python + pyglet
 ### 1) Study → fork → tweak → regrow (the viral loop)
 
 1. Open a vendor datapack (read-only) and pick a structure.
-2. Grow the jigsaw metropolis a few steps (seed-tape deterministic).
-3. Click a jigsaw block → see the pool/target/name/joint/final_state.
+2. Grow the pool metropolis a few steps (seed-tape deterministic).
+3. Click a pool connector block → see the pool/target/name/joint/final_state.
 4. Hit **Edit** → the tool forks the relevant JSON/NBT into your **work pack** overlay.
 5. Change a pool weight / swap an element / tweak a processor list.
 6. Hit **Regrow** → the city changes immediately, using the same seed tape unless you reroll.
@@ -148,7 +148,7 @@ We normalize everything to `(namespace, kind, path)`:
 - `biomes` picker (biome/tag list)
 - `spawn_overrides` (later; raw for MVP)
 - `step` dropdown (gen step)
-- Jigsaw section:
+- Pool section:
   - `start_pool` picker
   - `start_jigsaw_name` (string)
   - `size` (int slider)
@@ -173,13 +173,13 @@ We normalize everything to `(namespace, kind, path)`:
 
 ## Integration with the existing metropolis viewer
 
-- Clicking a **jigsaw block** selects it and opens a jigsaw inspector:
+- Clicking a **pool connector block** selects it and opens a pool inspector:
   - pool, target, name, joint, final_state, facing
   - buttons:
     - **Open Pool** (jumps Library to that template_pool)
     - **Fork + Edit Pool**
     - **Regrow From Here**
-- Editing `template_pool` should invalidate jigsaw expansion caches and rerun growth.
+- Editing `template_pool` should invalidate pool expansion caches and rerun growth.
 - Seed tape remains the “truth”; edits change the city without changing the tape.
 
 ## Milestones (small, testable steps)
@@ -193,7 +193,7 @@ We normalize everything to `(namespace, kind, path)`:
 4. **Typed forms for `template_pool`**
    - pickers + elements table + live regrow integration.
 5. **Typed forms for `structure` + `structure_set`**
-   - enough to author a minimal jigsaw structure pipeline.
+   - enough to author a minimal pool-structure pipeline.
 6. **Processor preview toggle (subset)**
    - show Raw vs Processed effect in the viewport.
 

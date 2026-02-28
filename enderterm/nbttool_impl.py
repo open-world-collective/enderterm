@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #
-# NOTE: Implementation moved here from `enderterm/nbttool.py`. That original file
-# is now a thin wrapper to keep historical entrypoints stable.
+# NOTE: Implementation moved here from the legacy `enderterm/nbttool.py` wrapper.
+# That original file remains as a thin compatibility entrypoint.
 
 from __future__ import annotations
 
@@ -34,8 +34,9 @@ from pathlib import Path
 from pathlib import PurePosixPath
 from typing import Callable, Iterable, Literal, TypeVar
 
-# When executed as `python enderterm/nbttool.py`, sys.path[0] is `enderterm/`
-# which breaks `import enderterm.*` package imports. Add the repo root.
+# When executed via the legacy `python enderterm/nbttool.py` entrypoint,
+# sys.path[0] is `enderterm/` which breaks `import enderterm.*` package imports.
+# Add the repo root.
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -602,13 +603,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "--jigsaw-seed",
         type=lambda s: int(s, 0),
         default=None,
-        help="Base seed for deterministic jigsaw expansion (hex or decimal)",
+        help="Base seed for deterministic pool expansion (hex or decimal)",
     )
     dp_view.add_argument(
         "--jigsaw-seeds",
         type=str,
         default=None,
-        help="Comma-separated per-level jigsaw seeds to use for Right expansions (hex or decimal)",
+        help="Comma-separated per-level pool seeds for Right expansions (hex or decimal)",
     )
     dp_view.add_argument(
         "--perf-seconds",
@@ -625,7 +626,7 @@ def _build_parser() -> argparse.ArgumentParser:
     dp_view.add_argument(
         "--smoke-expand-once",
         action="store_true",
-        help="Smoke test: load the selected NBT structure, expand jigsaw once (Right), then quit",
+        help="Smoke test: load the selected NBT structure, run one pool expansion step (Right), then quit",
     )
     dp_view.add_argument(
         "--smoke-second-viewport-fx",

@@ -6,7 +6,7 @@ Dev note: when adding a new visual effect, start with intensity turned way up so
 
 - [ ] NBT export fidelity: include block-entity `blocks[].nbt` and `entities[]` (currently blocks+palette only)
 - [ ] NBT export: preserve original positions (store origin offset in a sidecar `.json`, or embed via a convention)
-- [ ] Jigsaw fidelity: support more pool element types and `projection`/processors closer to vanilla behavior
+- [ ] Pool fidelity: support more pool element types and `projection`/processors closer to vanilla behavior
 
 ### Input / UX
 
@@ -21,7 +21,7 @@ Dev note: when adding a new visual effect, start with intensity turned way up so
 
 ### Maintenance
 
-- [ ] Add a small “repro pack” / fixture for testing jigsaw expansion determinism
+- [ ] Add a small “repro pack” / fixture for testing pool expansion determinism
 - [ ] Add a minimal CLI `self-test` that exercises NBT export+import roundtrip
 
 ### Done (recent)

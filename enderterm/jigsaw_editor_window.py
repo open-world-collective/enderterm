@@ -103,7 +103,7 @@ def create_jigsaw_editor_window(
             except Exception:
                 desired_vsync = True
             super().__init__(
-                width=1180, height=760, resizable=True, caption="EnderTerm: jigsaw editor", vsync=desired_vsync
+                width=1180, height=760, resizable=True, caption="EnderTerm: pool editor", vsync=desired_vsync
             )
 
             self._raw_layout = pyglet.text.layout.IncrementalTextLayout(
@@ -141,7 +141,7 @@ def create_jigsaw_editor_window(
             self._divider.opacity = 200
 
             self._title = pyglet.text.Label(
-                "Jigsaw Editor",
+                "Pool Editor",
                 x=14,
                 y=self.height - 14,
                 anchor_x="left",

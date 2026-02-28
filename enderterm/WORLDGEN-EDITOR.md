@@ -14,7 +14,7 @@ This is the “menus and whatnot” editor for Minecraft 1.20.1 worldgen JSON in
 
 3) In the 3D view:
 - Toggle Ender Vision with `V`.
-- Hover a jigsaw socket, click to select it.
+- Hover a pool socket, click to select it.
 - Press `J` to open its pool (or `Shift+J` to fork+edit it).
 - Press `Enter` to regrow using the same seed tape (so changes are attributable).
 
@@ -43,7 +43,7 @@ The work pack lives at `enderterm/work-pack/` (internal package dir).
 - **Structures**: villages, temples, cities, dungeons, etc.
   - Controlled globally via `worldgen/structure_set` + `worldgen/structure`.
 
-The worldgen editor MVP is focused on **jigsaw structures**, because they’re the “metropolis growth” magic.
+The worldgen editor MVP is focused on **pool-based structures**, because they’re the “metropolis growth” magic.
 
 ### Structure placement: `structure_set`
 
@@ -61,12 +61,12 @@ Files: `data/<ns>/worldgen/structure/*.json`
 
 This answers: “what do we build when we decide to start it?”
 
-For jigsaw structures, key fields include:
+For pool-based structures, key fields include:
 - `start_pool`: the first pool the generator pulls a starting piece from
 - `size`: how many “expansion rounds” to attempt
 - `biomes`: which biomes (or biome tags) can host this structure
 
-### Jigsaw growth: `template_pool` (the star of the show)
+### Pool growth: `template_pool` (the star of the show)
 
 Files: `data/<ns>/worldgen/template_pool/**/*.json`
 
@@ -92,12 +92,12 @@ Common element fields:
 
 Files: `data/<ns>/structures/**/*.nbt`
 
-These are the actual structure pieces. They can contain **jigsaw blocks**; jigsaw blocks are “ports” that say:
+These are the actual structure pieces. They can contain **pool connector blocks**; these “ports” say:
 
 - “I connect to a piece from pool X”
 - “I want to attach to a target socket named Y”
 
-That’s why the editor links jigsaw sockets ↔ pools.
+That’s why the editor links pool sockets ↔ pools.
 
 ## Using the editor (what the panes mean)
 
@@ -131,7 +131,7 @@ This keeps vendor packs pristine and makes diffs obvious.
 
 ### Regrow (why it feels so immediate)
 
-The viewer’s “metropolis” is built by iteratively expanding jigsaw sockets:
+The viewer’s “metropolis” is built by iteratively expanding pool sockets:
 
 - Each expansion step picks elements from pools.
 - The “seed tape” makes those picks deterministic.
@@ -146,7 +146,7 @@ Open the pool that contains the big piece and:
 
 - Increase its `weight`
 - Reduce (or remove) tiny/boring pieces
-- Ensure the big piece’s jigsaw sockets point at pools that can sustain growth (not dead-end pools)
+- Ensure the big piece’s pool sockets point at pools that can sustain growth (not dead-end pools)
 
 ### Make a pool stop growing (intentional dead ends)
 
@@ -156,8 +156,8 @@ Open the pool that contains the big piece and:
 ### When something refuses to connect
 
 Common causes:
-- Jigsaw “target” name mismatch (socket expects a different target)
-- Wrong pool id in the jigsaw block
+- Pool “target” name mismatch (socket expects a different target)
+- Wrong pool id in the pool connector block
 - `projection` mismatch (terrain matching vs rigid) making it fail placement rules
 - Processor list turning required blocks into air (rare, but spicy)
 
