@@ -10012,7 +10012,7 @@ def view_datapack_opengl(  # pragma: no cover
                     "Keys: Up/Down select  PgUp/PgDn page  / filter  D debug  C 2nd viewport  Shift+C add viewport  W walk mode  K kValue  V ender vision",
                     "Pool: Right expand  Left undo  Space reroll",
                     "Build: B toggle  LMB break / RMB place / MMB pick  1-9/0 hotbar  ⌥ camera  I palette  ⌘Z undo / ⌘⇧Z redo",
-                    "View: O ortho  F frame  C toggle 2nd viewport  Shift+C add viewport  W walk mode  Esc/Q quit",
+                    "View: O ortho  F frame  C toggle 2nd viewport  Shift+C add viewport  W walk mode  Esc exits walk/search/rez",
                     "Env: E cycle",
                     "Export: U USDZ  N NBT  P open folder",
                     "",
@@ -12976,7 +12976,6 @@ def view_datapack_opengl(  # pragma: no cover
                     if self._rez_active:
                         self._cancel_rez()
                         return
-                    self.close()
                     return
                 if symbol == pyglet.window.key.K:
                     if not self._search_active:
@@ -13008,9 +13007,6 @@ def view_datapack_opengl(  # pragma: no cover
                         return
                     # Forking is only done from the editor UI (not via hotkeys).
                     self._open_pool_in_worldgen(pool_id, fork=False)
-                    return
-                if symbol == pyglet.window.key.Q:
-                    self.close()
                     return
                 if symbol == pyglet.window.key.I:
                     self._toggle_palette()
@@ -16354,7 +16350,7 @@ def view_datapack_opengl(  # pragma: no cover
 
         if not smoke_enabled:
             print(
-                "Controls: scroll zoom, ⌥+left-drag rotate, ⌥+middle-drag pan, R reset, Tab hide UI, D debug panel, C toggle 2nd viewport, Shift+C add viewport, Esc cancel/quit, Q quit"
+                "Controls: scroll zoom, ⌥+left-drag rotate, ⌥+middle-drag pan, R reset, Tab hide UI, D debug panel, C toggle 2nd viewport, Shift+C add viewport, Esc exits walk/search/rez"
             )
             print("Extra: E env, F frame view, O ortho, U export USDZ, N export NBT, P open folder")
             print("UI: K kValue, V ender vision, ? help")

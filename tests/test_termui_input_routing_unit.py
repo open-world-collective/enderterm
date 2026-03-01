@@ -1764,6 +1764,25 @@ def test_datapack_viewer_viewport_toggle_keybind_is_c_chord() -> None:
     assert "L walk mode" not in source
 
 
+def test_datapack_viewer_escape_and_q_no_longer_quit_main_window() -> None:
+    source = _datapack_viewer_source()
+    key_blocks = _source_method_blocks(
+        source,
+        signature="def on_key_press(self, symbol: int, modifiers: int) -> None:",
+        window=12000,
+    )
+    main_block = next(
+        b for b in key_blocks if "_open_additional_viewport_window()" in b and "_toggle_second_viewport_window()" in b
+    )
+    assert "if symbol == pyglet.window.key.Q:" not in main_block
+    esc_idx = main_block.find("if symbol == pyglet.window.key.ESCAPE:")
+    assert esc_idx >= 0
+    esc_block = main_block[esc_idx : esc_idx + 240]
+    assert "self._cancel_rez()" in esc_block
+    assert "self.close()" not in esc_block
+    assert "Esc/Q quit" not in source
+
+
 def test_datapack_viewer_walk_mode_integrator_updates_orbit_xz_only() -> None:
     source = _datapack_viewer_source()
     assert "move_dx, move_dz, move_carry = _walk_mode_integrate_xz(" in source
