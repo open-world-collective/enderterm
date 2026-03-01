@@ -15924,6 +15924,31 @@ def view_datapack_opengl(  # pragma: no cover
                         return
                     if focus_close_by_click:
                         target_obj = _smoke_focus_window_obj(source)
+                        if target_obj is None:
+                            if now - focus_step_started_t > 3.0:
+                                _smoke_finish(False, f"smoke: {source} window did not become available after open")
+                            return
+                        target_has_focus = False
+                        try:
+                            target_has_focus = bool(window_has_key_focus(target_obj))
+                        except Exception:
+                            target_has_focus = False
+                        if not target_has_focus:
+                            try:
+                                handoff_window_focus(target_obj)
+                            except Exception:
+                                pass
+                            if now - focus_step_started_t > 5.0:
+                                _smoke_finish(
+                                    False,
+                                    f"smoke: close-button target never gained key focus for {source}",
+                                    extra=_smoke_focus_payload(
+                                        awaiting_click=False,
+                                        pending_source=str(getattr(win, "_focus_probe_pending_source", "")),
+                                        click_target=focus_click_target,
+                                    ),
+                                )
+                            return
                         try:
                             handoff_window_focus(target_obj)
                         except Exception:

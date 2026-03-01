@@ -1714,6 +1714,21 @@ def test_datapack_viewer_smoke_capture_region_helper_is_shared() -> None:
     assert "_smoke_capture_region_px(second, trim_sidebar=False)" in source
 
 
+def test_datapack_viewer_smoke_close_click_waits_for_focus_before_arming() -> None:
+    source = _datapack_viewer_source()
+
+    assert "target_has_focus = bool(window_has_key_focus(target_obj))" in source
+    assert 'f"smoke: close-button target never gained key focus for {source}"' in source
+    assert "pending_source=str(getattr(win, \"_focus_probe_pending_source\", \"\"))" in source
+
+
+def test_datapack_viewer_smoke_close_click_reports_missing_window_after_open() -> None:
+    source = _datapack_viewer_source()
+
+    assert "if target_obj is None:" in source
+    assert "smoke: {source} window did not become available after open" in source
+
+
 def test_datapack_viewer_tool_close_focus_handoff_remains_enabled() -> None:
     source = _datapack_viewer_source()
 
