@@ -19,13 +19,19 @@ Start vanilla-compatible, then progressively separate interfaces from engine-spe
 
 See [ROADMAP.md](ROADMAP.md) for milestone and architecture targets.
 
-## Demo video
+## Demo videos
+
+### end city
 
 [![EnderTerm demo video (end city)](https://img.youtube.com/vi/ATlpDlLXqsc/hqdefault.jpg)](https://www.youtube.com/watch?v=ATlpDlLXqsc)
 
 Watch on YouTube (end city): https://www.youtube.com/watch?v=ATlpDlLXqsc
 
-Earlier demo (ancient city center): https://www.youtube.com/watch?v=L5Iz9k-WMbc
+### ancient city center
+
+[![EnderTerm demo video (ancient city center)](https://img.youtube.com/vi/L5Iz9k-WMbc/hqdefault.jpg)](https://www.youtube.com/watch?v=L5Iz9k-WMbc)
+
+Watch on YouTube (ancient city center): https://www.youtube.com/watch?v=L5Iz9k-WMbc
 
 ## License
 
