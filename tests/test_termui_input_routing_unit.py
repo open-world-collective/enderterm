@@ -46,9 +46,11 @@ from enderterm.datapack_viewer import (
     _safe_window_gl_cleanup,
     _smoke_hex_hamming_distance,
     _smoke_signature_from_rgba,
+    _walk_mode_apply_collision_xz,
     _walk_mode_integrate_xz,
     _walk_mode_key_action,
     _walk_mode_move_direction_xz,
+    _walk_mode_point_blocked,
 )
 
 
@@ -418,6 +420,71 @@ def test_walk_mode_integrate_xz_uses_fixed_step_and_stable_carry() -> None:
     assert abs(dx2 - 0.2) <= 1e-9
     assert abs(dz2 - 0.0) <= 1e-9
     assert abs(carry2 - 0.005) <= 1e-9
+
+
+def test_walk_mode_point_blocked_checks_voxels_and_env_column() -> None:
+    solids = {(1, 2, 3)}
+    assert _walk_mode_point_blocked(
+        x_u=1.4,
+        y_u=2.2,
+        z_u=3.9,
+        solid_positions=solids,
+    )
+    assert not _walk_mode_point_blocked(
+        x_u=0.1,
+        y_u=2.2,
+        z_u=3.9,
+        solid_positions=solids,
+    )
+
+    def _env_top_y(ix: int, iz: int) -> int | None:
+        if (ix, iz) == (4, -2):
+            return 8
+        return None
+
+    assert _walk_mode_point_blocked(
+        x_u=4.1,
+        y_u=5.0,
+        z_u=-1.2,
+        solid_positions=None,
+        env_top_y_at_xz=_env_top_y,
+        env_bottom_y=3,
+    )
+    assert not _walk_mode_point_blocked(
+        x_u=4.1,
+        y_u=9.1,
+        z_u=-1.2,
+        solid_positions=None,
+        env_top_y_at_xz=_env_top_y,
+        env_bottom_y=3,
+    )
+
+
+def test_walk_mode_apply_collision_xz_prevents_tunneling_and_allows_clear_motion() -> None:
+    blocked_dx, blocked_dz = _walk_mode_apply_collision_xz(
+        start_x_u=0.1,
+        start_y_u=1.0,
+        start_z_u=0.1,
+        move_dx_u=2.0,
+        move_dz_u=0.0,
+        solid_positions={(1, 1, 0)},
+        max_substep_u=0.5,
+    )
+    # Without substeps this would jump to x=2.1 and tunnel past (1,1,0).
+    assert abs(blocked_dx - 0.5) <= 1e-9
+    assert abs(blocked_dz - 0.0) <= 1e-9
+
+    clear_dx, clear_dz = _walk_mode_apply_collision_xz(
+        start_x_u=0.1,
+        start_y_u=1.0,
+        start_z_u=0.1,
+        move_dx_u=0.75,
+        move_dz_u=-0.25,
+        solid_positions=set(),
+        max_substep_u=0.25,
+    )
+    assert abs(clear_dx - 0.75) <= 1e-9
+    assert abs(clear_dz + 0.25) <= 1e-9
 
 
 def test_render_cap_schedule_catchup_step_is_bounded() -> None:
@@ -1801,7 +1868,8 @@ def test_datapack_viewer_escape_and_q_no_longer_quit_main_window() -> None:
 def test_datapack_viewer_walk_mode_integrator_updates_orbit_xz_only() -> None:
     source = _datapack_viewer_source()
     assert "move_dx, move_dz, move_carry = _walk_mode_integrate_xz(" in source
-    assert "self._orbit_target = (float(ox) + float(move_dx), float(oy), float(oz) + float(move_dz))" in source
+    assert "resolved_dx, resolved_dz = _walk_mode_apply_collision_xz(" in source
+    assert "self._orbit_target = (float(ox) + float(resolved_dx), float(oy), float(oz) + float(resolved_dz))" in source
 
 
 def test_datapack_viewer_walk_mode_capture_releases_on_focus_and_tool_window_paths() -> None:

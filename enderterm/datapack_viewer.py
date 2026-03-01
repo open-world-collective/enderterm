@@ -383,6 +383,87 @@ def _walk_mode_integrate_xz(
     return (dir_x * travel, dir_z * travel, carry_s)
 
 
+def _walk_mode_point_blocked(
+    *,
+    x_u: float,
+    y_u: float,
+    z_u: float,
+    solid_positions: set[tuple[int, int, int]] | None,
+    env_top_y_at_xz: Callable[[int, int], int | None] | None = None,
+    env_bottom_y: int | None = None,
+) -> bool:
+    """Return whether a world-space point is blocked by solid geometry."""
+    ix = int(math.floor(float(x_u)))
+    iy = int(math.floor(float(y_u)))
+    iz = int(math.floor(float(z_u)))
+    solids = solid_positions
+    if solids and (ix, iy, iz) in solids:
+        return True
+    if env_top_y_at_xz is None or env_bottom_y is None:
+        return False
+    top_y: int | None
+    try:
+        top_raw = env_top_y_at_xz(int(ix), int(iz))
+    except Exception:
+        top_raw = None
+    if top_raw is None:
+        top_y = None
+    else:
+        try:
+            top_y = int(top_raw)
+        except Exception:
+            top_y = None
+    if top_y is None:
+        return False
+    return int(env_bottom_y) <= int(iy) <= int(top_y)
+
+
+def _walk_mode_apply_collision_xz(
+    *,
+    start_x_u: float,
+    start_y_u: float,
+    start_z_u: float,
+    move_dx_u: float,
+    move_dz_u: float,
+    solid_positions: set[tuple[int, int, int]] | None,
+    env_top_y_at_xz: Callable[[int, int], int | None] | None = None,
+    env_bottom_y: int | None = None,
+    max_substep_u: float,
+) -> tuple[float, float]:
+    """Resolve an XZ movement delta using deterministic substep collision checks."""
+    dx = float(move_dx_u)
+    dz = float(move_dz_u)
+    if (not math.isfinite(dx)) or (not math.isfinite(dz)):
+        return (0.0, 0.0)
+    travel_u = math.hypot(dx, dz)
+    if travel_u <= 1e-9:
+        return (0.0, 0.0)
+    step_u = float(max_substep_u)
+    if (not math.isfinite(step_u)) or step_u <= 1e-6:
+        step_u = 0.25
+    substeps = max(1, int(math.ceil(travel_u / step_u)))
+    step_dx = dx / float(substeps)
+    step_dz = dz / float(substeps)
+    cur_x = float(start_x_u)
+    cur_z = float(start_z_u)
+    y_u = float(start_y_u)
+    for _ in range(int(substeps)):
+        next_x = cur_x + float(step_dx)
+        next_z = cur_z + float(step_dz)
+        if _walk_mode_point_blocked(
+            x_u=next_x,
+            y_u=y_u,
+            z_u=next_z,
+            solid_positions=solid_positions,
+            env_top_y_at_xz=env_top_y_at_xz,
+            env_bottom_y=env_bottom_y,
+        ):
+            break
+        cur_x = float(next_x)
+        cur_z = float(next_z)
+    return (float(cur_x - float(start_x_u)), float(cur_z - float(start_z_u)))
+
+
 def _render_cap_refresh_hz_state(*, current_hz: int, desired_hz: int, force_draw: bool) -> tuple[int, bool]:
     """Apply render-cap Hz refresh and force-draw transition."""
     current = int(current_hz)
@@ -3833,6 +3914,7 @@ def view_datapack_opengl(  # pragma: no cover
                 self._walk_mode_move_fixed_step_s = 1.0 / 120.0
                 self._walk_mode_move_max_steps = 8
                 self._walk_mode_move_speed_u_s = 6.0
+                self._walk_mode_collision_substep_u = 0.25
                 self._build_hover_pick_enabled = bool(params_mod.hover_pick_enabled(param_store))
                 self._hotbar_panel_p = 1.0
                 self._hotbar_panel_tween: Tween | None = None
@@ -11409,7 +11491,7 @@ def view_datapack_opengl(  # pragma: no cover
                     )
                 ]
                 if bool(getattr(self, "_walk_mode_active", False)):
-                    lines.append("WALK MODE ACTIVE: Esc exits   W/A/S/D move (XZ only, no collision)")
+                    lines.append("WALK MODE ACTIVE: Esc exits   W/A/S/D move (XZ, collision-safe)")
                 if depth:
                     lines.append(f"seed: 0x{self.jigsaw_seeds[-1]:08x}   (Space reroll)")
                 else:
@@ -11866,8 +11948,31 @@ def view_datapack_opengl(  # pragma: no cover
                     self._walk_mode_move_accum_s = float(move_carry)
                     if abs(move_dx) > 1e-9 or abs(move_dz) > 1e-9:
                         ox, oy, oz = self._orbit_target
-                        self._orbit_target = (float(ox) + float(move_dx), float(oy), float(oz) + float(move_dz))
-                        self._mark_camera_user_input()
+                        cam_x, cam_y, cam_z = _viewport_camera_world_position(self)
+                        solids = self._rez_live_positions if self._rez_active else self._pick_positions
+                        env_top_lookup: Callable[[int, int], int | None] | None = None
+                        env_bottom_y: int | None = None
+                        try:
+                            if not self._env_preset().is_space():
+                                env_top_lookup = self._env_top_y_cached_at
+                                env_bottom_y = int(self._env_ground_bottom)
+                        except Exception:
+                            env_top_lookup = None
+                            env_bottom_y = None
+                        resolved_dx, resolved_dz = _walk_mode_apply_collision_xz(
+                            start_x_u=float(cam_x),
+                            start_y_u=float(cam_y),
+                            start_z_u=float(cam_z),
+                            move_dx_u=float(move_dx),
+                            move_dz_u=float(move_dz),
+                            solid_positions=solids,
+                            env_top_y_at_xz=env_top_lookup,
+                            env_bottom_y=env_bottom_y,
+                            max_substep_u=float(getattr(self, "_walk_mode_collision_substep_u", 0.25)),
+                        )
+                        if abs(resolved_dx) > 1e-9 or abs(resolved_dz) > 1e-9:
+                            self._orbit_target = (float(ox) + float(resolved_dx), float(oy), float(oz) + float(resolved_dz))
+                            self._mark_camera_user_input()
                 else:
                     self._walk_mode_move_accum_s = 0.0
                 self._tick_log_panel_tween()
