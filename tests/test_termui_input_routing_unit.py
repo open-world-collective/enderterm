@@ -47,6 +47,7 @@ from enderterm.datapack_viewer import (
     _smoke_hex_hamming_distance,
     _smoke_signature_from_rgba,
     _walk_mode_apply_collision_xz,
+    _walk_mode_forward_xz,
     _walk_mode_integrate_xz,
     _walk_mode_key_action,
     _walk_mode_move_direction_xz,
@@ -365,6 +366,58 @@ def test_walk_mode_move_direction_xz_follows_yaw_and_normalizes_diagonals() -> N
     )
     assert idle_x == 0.0
     assert idle_z == 0.0
+
+
+def test_walk_mode_forward_xz_uses_horizontal_projection_and_ignores_vertical_delta() -> None:
+    fx_a, fz_a = _walk_mode_forward_xz(
+        yaw_deg=0.0,
+        orbit_target=(0.0, 0.0, 0.0),
+        camera_world=(0.0, 30.0, 10.0),
+    )
+    fx_b, fz_b = _walk_mode_forward_xz(
+        yaw_deg=0.0,
+        orbit_target=(0.0, 0.0, 0.0),
+        camera_world=(0.0, -30.0, 10.0),
+    )
+    assert abs(fx_a - 0.0) <= 1e-9
+    assert abs(fz_a + 1.0) <= 1e-9
+    assert abs(fx_b - fx_a) <= 1e-9
+    assert abs(fz_b - fz_a) <= 1e-9
+
+    # Degenerate XZ projection falls back to yaw heading.
+    fx_fallback, fz_fallback = _walk_mode_forward_xz(
+        yaw_deg=90.0,
+        orbit_target=(2.0, 0.0, 3.0),
+        camera_world=(2.0, 99.0, 3.0),
+    )
+    assert abs(fx_fallback - 1.0) <= 1e-9
+    assert abs(fz_fallback - 0.0) <= 1e-9
+
+
+def test_walk_mode_move_direction_respects_forward_override_mapping() -> None:
+    keys = {"w": 87, "a": 65, "s": 83, "d": 68}
+    fwd_dx, fwd_dz = _walk_mode_move_direction_xz(
+        pressed_symbols={keys["w"]},
+        yaw_deg=0.0,
+        forward_xz=(1.0, 0.0),
+        key_w=keys["w"],
+        key_a=keys["a"],
+        key_s=keys["s"],
+        key_d=keys["d"],
+    )
+    back_dx, back_dz = _walk_mode_move_direction_xz(
+        pressed_symbols={keys["s"]},
+        yaw_deg=0.0,
+        forward_xz=(1.0, 0.0),
+        key_w=keys["w"],
+        key_a=keys["a"],
+        key_s=keys["s"],
+        key_d=keys["d"],
+    )
+    assert abs(fwd_dx - 1.0) <= 1e-9
+    assert abs(fwd_dz - 0.0) <= 1e-9
+    assert abs(back_dx + 1.0) <= 1e-9
+    assert abs(back_dz - 0.0) <= 1e-9
 
 
 def test_walk_mode_integrate_xz_uses_fixed_step_and_stable_carry() -> None:
@@ -1867,7 +1920,9 @@ def test_datapack_viewer_escape_and_q_no_longer_quit_main_window() -> None:
 
 def test_datapack_viewer_walk_mode_integrator_updates_orbit_xz_only() -> None:
     source = _datapack_viewer_source()
+    assert "walk_forward_xz = _walk_mode_forward_xz(" in source
     assert "move_dx, move_dz, move_carry = _walk_mode_integrate_xz(" in source
+    assert "forward_xz=walk_forward_xz" in source
     assert "resolved_dx, resolved_dz = _walk_mode_apply_collision_xz(" in source
     assert "self._orbit_target = (float(ox) + float(resolved_dx), float(oy), float(oz) + float(resolved_dz))" in source
 

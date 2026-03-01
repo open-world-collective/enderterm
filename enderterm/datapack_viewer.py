@@ -306,6 +306,7 @@ def _walk_mode_move_direction_xz(
     *,
     pressed_symbols: set[int],
     yaw_deg: float,
+    forward_xz: tuple[float, float] | None = None,
     key_w: int,
     key_a: int,
     key_s: int,
@@ -318,15 +319,9 @@ def _walk_mode_move_direction_xz(
     if forward_axis == 0 and strafe_axis == 0:
         return (0.0, 0.0)
 
-    yaw_rad = math.radians(-float(yaw_deg))
-    cos_yaw = math.cos(yaw_rad)
-    sin_yaw = math.sin(yaw_rad)
-    # Camera-forward projected to XZ (yaw-only): yaw=0 -> -Z.
-    fwd_x = -sin_yaw
-    fwd_z = -cos_yaw
-    # Camera-right projected to XZ (yaw-only): yaw=0 -> +X.
-    right_x = cos_yaw
-    right_z = -sin_yaw
+    fwd_x, fwd_z = _walk_mode_forward_xz(yaw_deg=float(yaw_deg), forward_xz=forward_xz)
+    right_x = -float(fwd_z)
+    right_z = float(fwd_x)
 
     move_x = fwd_x * float(forward_axis) + right_x * float(strafe_axis)
     move_z = fwd_z * float(forward_axis) + right_z * float(strafe_axis)
@@ -336,10 +331,38 @@ def _walk_mode_move_direction_xz(
     return (move_x / mag, move_z / mag)
 
 
+def _walk_mode_forward_xz(
+    *,
+    yaw_deg: float,
+    forward_xz: tuple[float, float] | None = None,
+    orbit_target: tuple[float, float, float] | None = None,
+    camera_world: tuple[float, float, float] | None = None,
+) -> tuple[float, float]:
+    """Resolve walk forward heading projected to XZ (strictly horizontal)."""
+    if forward_xz is not None:
+        fx = float(forward_xz[0])
+        fz = float(forward_xz[1])
+        mag = math.hypot(fx, fz)
+        if mag > 1e-9 and math.isfinite(mag):
+            return (fx / mag, fz / mag)
+
+    if orbit_target is not None and camera_world is not None:
+        fx = float(orbit_target[0]) - float(camera_world[0])
+        fz = float(orbit_target[2]) - float(camera_world[2])
+        mag = math.hypot(fx, fz)
+        if mag > 1e-9 and math.isfinite(mag):
+            return (fx / mag, fz / mag)
+
+    yaw_rad = math.radians(-float(yaw_deg))
+    # Camera-forward projected to XZ (yaw-only fallback): yaw=0 -> -Z.
+    return (-math.sin(yaw_rad), -math.cos(yaw_rad))
+
+
 def _walk_mode_integrate_xz(
     *,
     pressed_symbols: set[int],
     yaw_deg: float,
+    forward_xz: tuple[float, float] | None = None,
     frame_dt_s: float,
     carry_dt_s: float,
     fixed_dt_s: float,
@@ -371,6 +394,7 @@ def _walk_mode_integrate_xz(
     dir_x, dir_z = _walk_mode_move_direction_xz(
         pressed_symbols=pressed_symbols,
         yaw_deg=float(yaw_deg),
+        forward_xz=forward_xz,
         key_w=int(key_w),
         key_a=int(key_a),
         key_s=int(key_s),
@@ -11932,9 +11956,16 @@ def view_datapack_opengl(  # pragma: no cover
                 self._sync_ui_palette()
                 self._tick_camera_tween()
                 if bool(getattr(self, "_walk_mode_active", False)):
+                    cam_x, _cam_y, cam_z = _viewport_camera_world_position(self)
+                    walk_forward_xz = _walk_mode_forward_xz(
+                        yaw_deg=float(getattr(self, "yaw", 0.0)),
+                        orbit_target=tuple(getattr(self, "_orbit_target", (0.0, 0.0, 0.0))),
+                        camera_world=(float(cam_x), 0.0, float(cam_z)),
+                    )
                     move_dx, move_dz, move_carry = _walk_mode_integrate_xz(
                         pressed_symbols=set(getattr(self, "_walk_mode_scaffold_pressed", set())),
                         yaw_deg=float(getattr(self, "yaw", 0.0)),
+                        forward_xz=walk_forward_xz,
                         frame_dt_s=float(dt),
                         carry_dt_s=float(getattr(self, "_walk_mode_move_accum_s", 0.0)),
                         fixed_dt_s=float(getattr(self, "_walk_mode_move_fixed_step_s", 1.0 / 120.0)),
