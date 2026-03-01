@@ -288,15 +288,99 @@ def _walk_mode_key_action(
     scaffold_symbols: set[int],
 ) -> str:
     """Return walk-mode key-routing action for the current keypress."""
-    if int(symbol) == int(toggle_symbol) and not bool(int(modifiers) & int(cmd_mod)):
-        return "toggle_off" if bool(active) else "toggle_on"
+    toggle_pressed = int(symbol) == int(toggle_symbol) and not bool(int(modifiers) & int(cmd_mod))
     if not bool(active):
+        if toggle_pressed:
+            return "toggle_on"
         return "pass"
     if int(symbol) == int(escape_symbol):
         return "exit_escape"
     if int(symbol) in scaffold_symbols:
         return "consume_scaffold"
+    if toggle_pressed:
+        return "toggle_off"
     return "pass"
+
+
+def _walk_mode_move_direction_xz(
+    *,
+    pressed_symbols: set[int],
+    yaw_deg: float,
+    key_w: int,
+    key_a: int,
+    key_s: int,
+    key_d: int,
+) -> tuple[float, float]:
+    """Resolve normalized walk direction in world-space XZ from yaw + pressed keys."""
+    pressed = {int(s) for s in set(pressed_symbols)}
+    forward_axis = int(int(key_w) in pressed) - int(int(key_s) in pressed)
+    strafe_axis = int(int(key_d) in pressed) - int(int(key_a) in pressed)
+    if forward_axis == 0 and strafe_axis == 0:
+        return (0.0, 0.0)
+
+    yaw_rad = math.radians(-float(yaw_deg))
+    cos_yaw = math.cos(yaw_rad)
+    sin_yaw = math.sin(yaw_rad)
+    # Camera-forward projected to XZ (yaw-only): yaw=0 -> -Z.
+    fwd_x = -sin_yaw
+    fwd_z = -cos_yaw
+    # Camera-right projected to XZ (yaw-only): yaw=0 -> +X.
+    right_x = cos_yaw
+    right_z = -sin_yaw
+
+    move_x = fwd_x * float(forward_axis) + right_x * float(strafe_axis)
+    move_z = fwd_z * float(forward_axis) + right_z * float(strafe_axis)
+    mag = math.hypot(move_x, move_z)
+    if mag <= 1e-9 or (not math.isfinite(mag)):
+        return (0.0, 0.0)
+    return (move_x / mag, move_z / mag)
+
+
+def _walk_mode_integrate_xz(
+    *,
+    pressed_symbols: set[int],
+    yaw_deg: float,
+    frame_dt_s: float,
+    carry_dt_s: float,
+    fixed_dt_s: float,
+    max_steps: int,
+    speed_u_per_s: float,
+    key_w: int,
+    key_a: int,
+    key_s: int,
+    key_d: int,
+) -> tuple[float, float, float]:
+    """Integrate walk movement with fixed steps; returns (dx, dz, carry_dt_s)."""
+    step_s = float(fixed_dt_s)
+    if (not math.isfinite(step_s)) or step_s <= 0.0:
+        return (0.0, 0.0, 0.0)
+    step_limit = max(1, int(max_steps))
+    dt_s = max(0.0, float(frame_dt_s))
+    carry_s = max(0.0, float(carry_dt_s))
+    # Bound catch-up work to keep motion stable after a stall.
+    carry_s = min(carry_s + dt_s, float(step_limit) * step_s)
+    steps = min(step_limit, int(carry_s / step_s))
+    if steps <= 0:
+        return (0.0, 0.0, carry_s)
+    carry_s = max(0.0, carry_s - float(steps) * step_s)
+
+    speed = float(speed_u_per_s)
+    if (not math.isfinite(speed)) or speed <= 0.0:
+        return (0.0, 0.0, carry_s)
+
+    dir_x, dir_z = _walk_mode_move_direction_xz(
+        pressed_symbols=pressed_symbols,
+        yaw_deg=float(yaw_deg),
+        key_w=int(key_w),
+        key_a=int(key_a),
+        key_s=int(key_s),
+        key_d=int(key_d),
+    )
+    if abs(dir_x) <= 1e-9 and abs(dir_z) <= 1e-9:
+        return (0.0, 0.0, carry_s)
+
+    travel = speed * step_s * float(steps)
+    return (dir_x * travel, dir_z * travel, carry_s)
 
 
 def _render_cap_refresh_hz_state(*, current_hz: int, desired_hz: int, force_draw: bool) -> tuple[int, bool]:
@@ -2273,7 +2357,7 @@ def view_datapack_opengl(  # pragma: no cover
                 if symbol in {pyglet.window.key.ESCAPE, pyglet.window.key.Q}:
                     self.close()
                     return
-                if symbol == pyglet.window.key.W:
+                if symbol == pyglet.window.key.C:
                     self.close()
                     return
                 if (modifiers & cmd_mod) and symbol == pyglet.window.key.W:
@@ -3745,6 +3829,10 @@ def view_datapack_opengl(  # pragma: no cover
                 self._walk_mode_active = False
                 self._walk_mode_capture_active = False
                 self._walk_mode_scaffold_pressed: set[int] = set()
+                self._walk_mode_move_accum_s = 0.0
+                self._walk_mode_move_fixed_step_s = 1.0 / 120.0
+                self._walk_mode_move_max_steps = 8
+                self._walk_mode_move_speed_u_s = 6.0
                 self._build_hover_pick_enabled = bool(params_mod.hover_pick_enabled(param_store))
                 self._hotbar_panel_p = 1.0
                 self._hotbar_panel_tween: Tween | None = None
@@ -9921,10 +10009,10 @@ def view_datapack_opengl(  # pragma: no cover
                     else:
                         lines.append("Trackpad: (gestures unavailable) scroll/wheel zoom only")
                 lines += [
-                    "Keys: Up/Down select  PgUp/PgDn page  / filter  D debug  W 2nd viewport  Shift+W add viewport  L walk mode  K kValue  V ender vision",
+                    "Keys: Up/Down select  PgUp/PgDn page  / filter  D debug  C 2nd viewport  Shift+C add viewport  W walk mode  K kValue  V ender vision",
                     "Pool: Right expand  Left undo  Space reroll",
                     "Build: B toggle  LMB break / RMB place / MMB pick  1-9/0 hotbar  ⌥ camera  I palette  ⌘Z undo / ⌘⇧Z redo",
-                    "View: O ortho  F frame  W toggle 2nd viewport  Shift+W add viewport  L walk mode  Esc/Q quit",
+                    "View: O ortho  F frame  C toggle 2nd viewport  Shift+C add viewport  W walk mode  Esc/Q quit",
                     "Env: E cycle",
                     "Export: U USDZ  N NBT  P open folder",
                     "",
@@ -10721,6 +10809,7 @@ def view_datapack_opengl(  # pragma: no cover
                     return
                 self._walk_mode_active = bool(next_active)
                 self._walk_mode_scaffold_pressed = set()
+                self._walk_mode_move_accum_s = 0.0
                 self._set_walk_mode_capture(bool(next_active))
                 self._expansion_report.append(
                     f"Walk mode: {'ON' if next_active else 'OFF'} ({str(reason or 'unknown')})"
@@ -10735,6 +10824,7 @@ def view_datapack_opengl(  # pragma: no cover
                 if bool(getattr(self, "_walk_mode_capture_active", False)):
                     self._set_walk_mode_capture(False)
                     self._walk_mode_scaffold_pressed = set()
+                    self._walk_mode_move_accum_s = 0.0
 
             def _camera_modifier_active(self, modifiers: int) -> bool:
                 return bool(modifiers & pyglet.window.key.MOD_OPTION)
@@ -11319,11 +11409,11 @@ def view_datapack_opengl(  # pragma: no cover
                     )
                 ]
                 if bool(getattr(self, "_walk_mode_active", False)):
-                    lines.append("WALK MODE ACTIVE: Esc exits   movement keys captured (Phase A scaffold)")
+                    lines.append("WALK MODE ACTIVE: Esc exits   W/A/S/D move (XZ only, no collision)")
                 if depth:
                     lines.append(f"seed: 0x{self.jigsaw_seeds[-1]:08x}   (Space reroll)")
                 else:
-                    lines.append("Right expand   U export USDZ   N export NBT   F frame   W 2nd viewport   Shift+W add viewport")
+                    lines.append("Right expand   U export USDZ   N export NBT   F frame   C 2nd viewport   Shift+C add viewport")
 
                 if self._jigsaw_selected is not None:
                     c = self._jigsaw_selected
@@ -11358,7 +11448,7 @@ def view_datapack_opengl(  # pragma: no cover
                         f"Build ON: LMB break / RMB place / MMB pick   ⌥ camera   1-9/0 hotbar {slot}   I palette   {bid}"
                     )
                 else:
-                    lines.append("Up/Down select   PgUp/PgDn page   E env   O ortho   P open folder   W 2nd viewport   Shift+W add viewport")
+                    lines.append("Up/Down select   PgUp/PgDn page   E env   O ortho   P open folder   C 2nd viewport   Shift+C add viewport")
                 if self._last_export is not None:
                     lines.append(f"last export: {self._last_export.name}")
                 self._set_status(lines[: self.status_lines_max])
@@ -11759,6 +11849,27 @@ def view_datapack_opengl(  # pragma: no cover
                         self._repeat_next_at_s = now + float(self._repeat_rate_s)
                 self._sync_ui_palette()
                 self._tick_camera_tween()
+                if bool(getattr(self, "_walk_mode_active", False)):
+                    move_dx, move_dz, move_carry = _walk_mode_integrate_xz(
+                        pressed_symbols=set(getattr(self, "_walk_mode_scaffold_pressed", set())),
+                        yaw_deg=float(getattr(self, "yaw", 0.0)),
+                        frame_dt_s=float(dt),
+                        carry_dt_s=float(getattr(self, "_walk_mode_move_accum_s", 0.0)),
+                        fixed_dt_s=float(getattr(self, "_walk_mode_move_fixed_step_s", 1.0 / 120.0)),
+                        max_steps=int(getattr(self, "_walk_mode_move_max_steps", 8)),
+                        speed_u_per_s=float(getattr(self, "_walk_mode_move_speed_u_s", 6.0)),
+                        key_w=int(getattr(pyglet.window.key, "W", -1)),
+                        key_a=int(getattr(pyglet.window.key, "A", -1)),
+                        key_s=int(getattr(pyglet.window.key, "S", -1)),
+                        key_d=int(getattr(pyglet.window.key, "D", -1)),
+                    )
+                    self._walk_mode_move_accum_s = float(move_carry)
+                    if abs(move_dx) > 1e-9 or abs(move_dz) > 1e-9:
+                        ox, oy, oz = self._orbit_target
+                        self._orbit_target = (float(ox) + float(move_dx), float(oy), float(oz) + float(move_dz))
+                        self._mark_camera_user_input()
+                else:
+                    self._walk_mode_move_accum_s = 0.0
                 self._tick_log_panel_tween()
                 self._tick_sidebar_width_tween()
                 self._tick_hotbar_panel_tween()
@@ -12705,7 +12816,7 @@ def view_datapack_opengl(  # pragma: no cover
                     active=bool(getattr(self, "_walk_mode_active", False)),
                     symbol=int(symbol),
                     modifiers=int(modifiers),
-                    toggle_symbol=int(getattr(pyglet.window.key, "L", -1)),
+                    toggle_symbol=int(getattr(pyglet.window.key, "W", -1)),
                     escape_symbol=int(pyglet.window.key.ESCAPE),
                     cmd_mod=int(cmd_mod),
                     scaffold_symbols={
@@ -12916,7 +13027,7 @@ def view_datapack_opengl(  # pragma: no cover
                 if symbol == pyglet.window.key.D:
                     self._toggle_debug_panel()
                     return
-                if symbol == pyglet.window.key.W:
+                if symbol == pyglet.window.key.C:
                     if bool(modifiers & pyglet.window.key.MOD_SHIFT):
                         self._open_additional_viewport_window()
                     else:
@@ -16243,7 +16354,7 @@ def view_datapack_opengl(  # pragma: no cover
 
         if not smoke_enabled:
             print(
-                "Controls: scroll zoom, ⌥+left-drag rotate, ⌥+middle-drag pan, R reset, Tab hide UI, D debug panel, W toggle 2nd viewport, Shift+W add viewport, Esc cancel/quit, Q quit"
+                "Controls: scroll zoom, ⌥+left-drag rotate, ⌥+middle-drag pan, R reset, Tab hide UI, D debug panel, C toggle 2nd viewport, Shift+C add viewport, Esc cancel/quit, Q quit"
             )
             print("Extra: E env, F frame view, O ortho, U export USDZ, N export NBT, P open folder")
             print("UI: K kValue, V ender vision, ? help")

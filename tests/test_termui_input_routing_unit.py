@@ -46,7 +46,9 @@ from enderterm.datapack_viewer import (
     _safe_window_gl_cleanup,
     _smoke_hex_hamming_distance,
     _smoke_signature_from_rgba,
+    _walk_mode_integrate_xz,
     _walk_mode_key_action,
+    _walk_mode_move_direction_xz,
 )
 
 
@@ -291,6 +293,131 @@ def test_walk_mode_key_action_transitions_and_precedence() -> None:
         cmd_mod=cmd_mod,
         scaffold_symbols=set(scaffold),
     ) == "pass"
+
+    # When the toggle key is also a walk-movement key (W), active walk mode should
+    # keep treating it as movement input instead of toggling off.
+    toggle_as_move = 87
+    assert _walk_mode_key_action(
+        active=False,
+        symbol=toggle_as_move,
+        modifiers=0,
+        toggle_symbol=toggle_as_move,
+        escape_symbol=escape,
+        cmd_mod=cmd_mod,
+        scaffold_symbols=set(scaffold),
+    ) == "toggle_on"
+    assert _walk_mode_key_action(
+        active=True,
+        symbol=toggle_as_move,
+        modifiers=0,
+        toggle_symbol=toggle_as_move,
+        escape_symbol=escape,
+        cmd_mod=cmd_mod,
+        scaffold_symbols=set(scaffold),
+    ) == "consume_scaffold"
+
+
+def test_walk_mode_move_direction_xz_follows_yaw_and_normalizes_diagonals() -> None:
+    keys = {"w": 87, "a": 65, "s": 83, "d": 68}
+    dx, dz = _walk_mode_move_direction_xz(
+        pressed_symbols={keys["w"]},
+        yaw_deg=0.0,
+        key_w=keys["w"],
+        key_a=keys["a"],
+        key_s=keys["s"],
+        key_d=keys["d"],
+    )
+    assert abs(dx - 0.0) <= 1e-9
+    assert abs(dz + 1.0) <= 1e-9
+
+    dx_yaw_90, dz_yaw_90 = _walk_mode_move_direction_xz(
+        pressed_symbols={keys["w"]},
+        yaw_deg=90.0,
+        key_w=keys["w"],
+        key_a=keys["a"],
+        key_s=keys["s"],
+        key_d=keys["d"],
+    )
+    assert abs(dx_yaw_90 - 1.0) <= 1e-9
+    assert abs(dz_yaw_90 - 0.0) <= 1e-9
+
+    diag_x, diag_z = _walk_mode_move_direction_xz(
+        pressed_symbols={keys["w"], keys["d"]},
+        yaw_deg=0.0,
+        key_w=keys["w"],
+        key_a=keys["a"],
+        key_s=keys["s"],
+        key_d=keys["d"],
+    )
+    diag_mag = 2.0**-0.5
+    assert abs(diag_x - diag_mag) <= 1e-9
+    assert abs(diag_z + diag_mag) <= 1e-9
+
+    idle_x, idle_z = _walk_mode_move_direction_xz(
+        pressed_symbols=set(),
+        yaw_deg=15.0,
+        key_w=keys["w"],
+        key_a=keys["a"],
+        key_s=keys["s"],
+        key_d=keys["d"],
+    )
+    assert idle_x == 0.0
+    assert idle_z == 0.0
+
+
+def test_walk_mode_integrate_xz_uses_fixed_step_and_stable_carry() -> None:
+    keys = {"w": 87, "a": 65, "s": 83, "d": 68}
+    move_dx, move_dz, carry = _walk_mode_integrate_xz(
+        pressed_symbols={keys["w"]},
+        yaw_deg=0.0,
+        frame_dt_s=0.20,
+        carry_dt_s=0.0,
+        fixed_dt_s=0.05,
+        max_steps=2,
+        speed_u_per_s=4.0,
+        key_w=keys["w"],
+        key_a=keys["a"],
+        key_s=keys["s"],
+        key_d=keys["d"],
+    )
+    assert abs(move_dx - 0.0) <= 1e-9
+    assert abs(move_dz + 0.4) <= 1e-9
+    assert abs(carry - 0.0) <= 1e-9
+
+    # No movement input still consumes fixed-step budget (no catch-up burst later).
+    idle_dx, idle_dz, idle_carry = _walk_mode_integrate_xz(
+        pressed_symbols=set(),
+        yaw_deg=0.0,
+        frame_dt_s=0.20,
+        carry_dt_s=0.0,
+        fixed_dt_s=0.05,
+        max_steps=2,
+        speed_u_per_s=4.0,
+        key_w=keys["w"],
+        key_a=keys["a"],
+        key_s=keys["s"],
+        key_d=keys["d"],
+    )
+    assert idle_dx == 0.0
+    assert idle_dz == 0.0
+    assert abs(idle_carry - 0.0) <= 1e-9
+
+    dx2, dz2, carry2 = _walk_mode_integrate_xz(
+        pressed_symbols={keys["d"]},
+        yaw_deg=0.0,
+        frame_dt_s=0.03,
+        carry_dt_s=0.025,
+        fixed_dt_s=0.05,
+        max_steps=8,
+        speed_u_per_s=4.0,
+        key_w=keys["w"],
+        key_a=keys["a"],
+        key_s=keys["s"],
+        key_d=keys["d"],
+    )
+    assert abs(dx2 - 0.2) <= 1e-9
+    assert abs(dz2 - 0.0) <= 1e-9
+    assert abs(carry2 - 0.005) <= 1e-9
 
 
 def test_render_cap_schedule_catchup_step_is_bounded() -> None:
@@ -1613,10 +1740,34 @@ def test_datapack_viewer_walk_mode_scaffold_hooks_present() -> None:
     assert "def _walk_mode_force_exit(self, *, reason: str) -> None:" in source
     assert "def _set_walk_mode_capture(self, enabled: bool) -> None:" in source
     assert "walk_action = _walk_mode_key_action(" in source
+    assert 'toggle_symbol=int(getattr(pyglet.window.key, "W", -1))' in source
     assert "if walk_action == \"exit_escape\":" in source
     assert "self._walk_mode_set_active(False, reason=\"key_escape\")" in source
     assert "self.walk_mode_label = pyglet.text.Label(" in source
     assert "WALK MODE ACTIVE  (Esc exits)" in source
+
+
+def test_datapack_viewer_viewport_toggle_keybind_is_c_chord() -> None:
+    source = _datapack_viewer_source()
+    key_blocks = _source_method_blocks(
+        source,
+        signature="def on_key_press(self, symbol: int, modifiers: int) -> None:",
+        window=12000,
+    )
+    main_block = next(
+        b for b in key_blocks if "_open_additional_viewport_window()" in b and "_toggle_second_viewport_window()" in b
+    )
+    assert "if symbol == pyglet.window.key.C:" in main_block
+    assert "if symbol == pyglet.window.key.W:" not in main_block
+    assert "Shift+C add viewport" in source
+    assert "W walk mode" in source
+    assert "L walk mode" not in source
+
+
+def test_datapack_viewer_walk_mode_integrator_updates_orbit_xz_only() -> None:
+    source = _datapack_viewer_source()
+    assert "move_dx, move_dz, move_carry = _walk_mode_integrate_xz(" in source
+    assert "self._orbit_target = (float(ox) + float(move_dx), float(oy), float(oz) + float(move_dz))" in source
 
 
 def test_datapack_viewer_walk_mode_capture_releases_on_focus_and_tool_window_paths() -> None:
