@@ -21,9 +21,11 @@ See [ROADMAP.md](ROADMAP.md) for milestone and architecture targets.
 
 ## Demo video
 
-[![EnderTerm demo video](https://img.youtube.com/vi/L5Iz9k-WMbc/hqdefault.jpg)](https://www.youtube.com/watch?v=L5Iz9k-WMbc)
+[![EnderTerm demo video](https://img.youtube.com/vi/ATlpDlLXqsc/hqdefault.jpg)](https://www.youtube.com/watch?v=ATlpDlLXqsc)
 
-Watch on YouTube: https://www.youtube.com/watch?v=L5Iz9k-WMbc
+Watch on YouTube: https://www.youtube.com/watch?v=ATlpDlLXqsc
+
+Earlier demo: https://www.youtube.com/watch?v=L5Iz9k-WMbc
 
 ## License
 
