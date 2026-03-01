@@ -46,6 +46,7 @@ from enderterm.datapack_viewer import (
     _safe_window_gl_cleanup,
     _smoke_hex_hamming_distance,
     _smoke_signature_from_rgba,
+    _walk_mode_key_action,
 )
 
 
@@ -228,6 +229,68 @@ def test_render_cap_schedule_respects_low_idle_cadence() -> None:
             draws += 1
         t += step_s
     assert 2 <= draws <= 3
+
+
+def test_walk_mode_key_action_transitions_and_precedence() -> None:
+    toggle = 76
+    escape = 27
+    cmd_mod = 0x100 | 0x200
+    scaffold = {87, 65, 83, 68, 32, 340, 344}
+
+    assert _walk_mode_key_action(
+        active=False,
+        symbol=toggle,
+        modifiers=0,
+        toggle_symbol=toggle,
+        escape_symbol=escape,
+        cmd_mod=cmd_mod,
+        scaffold_symbols=set(scaffold),
+    ) == "toggle_on"
+    assert _walk_mode_key_action(
+        active=True,
+        symbol=toggle,
+        modifiers=0,
+        toggle_symbol=toggle,
+        escape_symbol=escape,
+        cmd_mod=cmd_mod,
+        scaffold_symbols=set(scaffold),
+    ) == "toggle_off"
+    assert _walk_mode_key_action(
+        active=True,
+        symbol=escape,
+        modifiers=0,
+        toggle_symbol=toggle,
+        escape_symbol=escape,
+        cmd_mod=cmd_mod,
+        scaffold_symbols=set(scaffold),
+    ) == "exit_escape"
+    assert _walk_mode_key_action(
+        active=True,
+        symbol=87,
+        modifiers=0,
+        toggle_symbol=toggle,
+        escape_symbol=escape,
+        cmd_mod=cmd_mod,
+        scaffold_symbols=set(scaffold),
+    ) == "consume_scaffold"
+    assert _walk_mode_key_action(
+        active=False,
+        symbol=87,
+        modifiers=0,
+        toggle_symbol=toggle,
+        escape_symbol=escape,
+        cmd_mod=cmd_mod,
+        scaffold_symbols=set(scaffold),
+    ) == "pass"
+    assert _walk_mode_key_action(
+        active=False,
+        symbol=toggle,
+        modifiers=cmd_mod,
+        toggle_symbol=toggle,
+        escape_symbol=escape,
+        cmd_mod=cmd_mod,
+        scaffold_symbols=set(scaffold),
+    ) == "pass"
 
 
 def test_render_cap_schedule_catchup_step_is_bounded() -> None:
@@ -1541,6 +1604,27 @@ def test_datapack_viewer_uses_shared_tool_close_handoff_helpers() -> None:
     assert 'self._request_tool_window_close_handoff(source="palette"' in compact
     assert 'self._consume_tool_window_close_request_path(source="debug"' in compact
     assert 'self._consume_tool_window_close_request_path(source="palette"' in compact
+
+
+def test_datapack_viewer_walk_mode_scaffold_hooks_present() -> None:
+    source = _datapack_viewer_source()
+
+    assert "def _walk_mode_set_active(self, active: bool, *, reason: str) -> None:" in source
+    assert "def _walk_mode_force_exit(self, *, reason: str) -> None:" in source
+    assert "def _set_walk_mode_capture(self, enabled: bool) -> None:" in source
+    assert "walk_action = _walk_mode_key_action(" in source
+    assert "if walk_action == \"exit_escape\":" in source
+    assert "self._walk_mode_set_active(False, reason=\"key_escape\")" in source
+    assert "self.walk_mode_label = pyglet.text.Label(" in source
+    assert "WALK MODE ACTIVE  (Esc exits)" in source
+
+
+def test_datapack_viewer_walk_mode_capture_releases_on_focus_and_tool_window_paths() -> None:
+    source = _datapack_viewer_source()
+
+    assert "self._walk_mode_force_exit(reason=\"deactivate\")" in source
+    assert "self._walk_mode_force_exit(reason=\"window_close\")" in source
+    assert source.count("self._walk_mode_force_exit(reason=\"tool_window\")") >= 4
 
 
 def test_close_focus_handoff_window_prefers_child_close_for_debug_and_palette() -> None:

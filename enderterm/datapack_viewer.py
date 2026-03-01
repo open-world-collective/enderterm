@@ -277,6 +277,28 @@ def _adaptive_update_budget_fps(*, dt_s: float, tick_fps_smooth: float) -> float
     return min(float(fps_inst), float(fps_smooth))
 
 
+def _walk_mode_key_action(
+    *,
+    active: bool,
+    symbol: int,
+    modifiers: int,
+    toggle_symbol: int,
+    escape_symbol: int,
+    cmd_mod: int,
+    scaffold_symbols: set[int],
+) -> str:
+    """Return walk-mode key-routing action for the current keypress."""
+    if int(symbol) == int(toggle_symbol) and not bool(int(modifiers) & int(cmd_mod)):
+        return "toggle_off" if bool(active) else "toggle_on"
+    if not bool(active):
+        return "pass"
+    if int(symbol) == int(escape_symbol):
+        return "exit_escape"
+    if int(symbol) in scaffold_symbols:
+        return "consume_scaffold"
+    return "pass"
+
+
 def _render_cap_refresh_hz_state(*, current_hz: int, desired_hz: int, force_draw: bool) -> tuple[int, bool]:
     """Apply render-cap Hz refresh and force-draw transition."""
     current = int(current_hz)
@@ -3307,6 +3329,19 @@ def view_datapack_opengl(  # pragma: no cover
                     batch=self.overlay_text_batch,
                     group=ui_group_text,
                 )
+                self.walk_mode_label = pyglet.text.Label(
+                    "WALK MODE ACTIVE  (Esc exits)",
+                    x=int(self.width * 0.5),
+                    y=int(self.height - 12),
+                    anchor_x="center",
+                    anchor_y="top",
+                    font_size=self._ui_i(12.0),
+                    font_name=self.ui_font_name,
+                    color=(*self._ui_amber, 225),
+                    batch=self.overlay_text_batch,
+                    group=ui_group_text,
+                )
+                self.walk_mode_label.visible = False
 
                 # Ender Vision overlay (V): faint debug lens for pool sockets, etc.
                 self._ender_vision_active = False
@@ -3707,6 +3742,9 @@ def view_datapack_opengl(  # pragma: no cover
                 # Build mode (v0): default mouse is Minecraft-style place/break.
                 # Hold ⌥ (Option) to temporarily enable camera controls.
                 self._build_enabled = True
+                self._walk_mode_active = False
+                self._walk_mode_capture_active = False
+                self._walk_mode_scaffold_pressed: set[int] = set()
                 self._build_hover_pick_enabled = bool(params_mod.hover_pick_enabled(param_store))
                 self._hotbar_panel_p = 1.0
                 self._hotbar_panel_tween: Tween | None = None
@@ -4020,6 +4058,7 @@ def view_datapack_opengl(  # pragma: no cover
 
             def on_close(self) -> None:
                 self._closing = True
+                self._walk_mode_force_exit(reason="window_close")
                 self._perf_write()
                 self._terminate_rez_worker()
                 self._close_all_viewport_windows()
@@ -4315,6 +4354,7 @@ def view_datapack_opengl(  # pragma: no cover
                 return self._record_tool_close_request_path_if_present(source=str(source), path=close_path)
 
             def _toggle_param_window(self) -> None:
+                self._walk_mode_force_exit(reason="tool_window")
                 if _close_and_clear_window_attr(owner=self, attr_name="_param_window"):
                     return
 
@@ -4336,6 +4376,7 @@ def view_datapack_opengl(  # pragma: no cover
                     pass
 
             def _toggle_worldgen_window(self) -> None:
+                self._walk_mode_force_exit(reason="tool_window")
                 if _close_and_clear_window_attr(owner=self, attr_name="_worldgen_window"):
                     return
 
@@ -8739,6 +8780,11 @@ def view_datapack_opengl(  # pragma: no cover
                     self.brand_label.y = 12
                 except Exception:
                     pass
+                try:
+                    self.walk_mode_label.x = int(self.width * 0.5)
+                    self.walk_mode_label.y = int(self.height - 12)
+                except Exception:
+                    pass
                 self._layout_ender_vision_overlay()
                 self._layout_hotbar_overlay()
                 self._layout_error_overlay()
@@ -8881,6 +8927,7 @@ def view_datapack_opengl(  # pragma: no cover
                         pass
 
             def _toggle_debug_panel(self) -> None:
+                self._walk_mode_force_exit(reason="tool_window")
                 # Legacy help widgets are retained for now but never shown.
                 for w in (
                     self.help_bg,
@@ -9173,6 +9220,7 @@ def view_datapack_opengl(  # pragma: no cover
                 return self._palette_window is not None
 
             def _toggle_palette(self) -> None:
+                self._walk_mode_force_exit(reason="tool_window")
                 # Palette is a separate window; toggle it on/off.
                 win = self._palette_window
                 if win is not None:
@@ -9873,10 +9921,10 @@ def view_datapack_opengl(  # pragma: no cover
                     else:
                         lines.append("Trackpad: (gestures unavailable) scroll/wheel zoom only")
                 lines += [
-                    "Keys: Up/Down select  PgUp/PgDn page  / filter  D debug  W 2nd viewport  Shift+W add viewport  K kValue  V ender vision",
+                    "Keys: Up/Down select  PgUp/PgDn page  / filter  D debug  W 2nd viewport  Shift+W add viewport  L walk mode  K kValue  V ender vision",
                     "Pool: Right expand  Left undo  Space reroll",
                     "Build: B toggle  LMB break / RMB place / MMB pick  1-9/0 hotbar  ⌥ camera  I palette  ⌘Z undo / ⌘⇧Z redo",
-                    "View: O ortho  F frame  W toggle 2nd viewport  Shift+W add viewport  Esc/Q quit",
+                    "View: O ortho  F frame  W toggle 2nd viewport  Shift+W add viewport  L walk mode  Esc/Q quit",
                     "Env: E cycle",
                     "Export: U USDZ  N NBT  P open folder",
                     "",
@@ -10647,6 +10695,47 @@ def view_datapack_opengl(  # pragma: no cover
                 self._hover_block = pos
                 self._hover_block_is_env = bool(is_env)
 
+            def _set_walk_mode_capture(self, enabled: bool) -> None:
+                want = bool(enabled)
+                if bool(getattr(self, "_walk_mode_capture_active", False)) == want:
+                    return
+                try:
+                    self.set_exclusive_mouse(bool(want))
+                except Exception:
+                    pass
+                try:
+                    self.set_mouse_visible(not bool(want))
+                except Exception:
+                    pass
+                self._walk_mode_capture_active = bool(want)
+                if not want:
+                    try:
+                        self._update_hover_cursor()
+                    except Exception:
+                        pass
+
+            def _walk_mode_set_active(self, active: bool, *, reason: str) -> None:
+                next_active = bool(active)
+                prev_active = bool(getattr(self, "_walk_mode_active", False))
+                if prev_active == next_active and bool(getattr(self, "_walk_mode_capture_active", False)) == next_active:
+                    return
+                self._walk_mode_active = bool(next_active)
+                self._walk_mode_scaffold_pressed = set()
+                self._set_walk_mode_capture(bool(next_active))
+                self._expansion_report.append(
+                    f"Walk mode: {'ON' if next_active else 'OFF'} ({str(reason or 'unknown')})"
+                )
+                self._update_status()
+                self.invalid = True
+
+            def _walk_mode_force_exit(self, *, reason: str) -> None:
+                if bool(getattr(self, "_walk_mode_active", False)):
+                    self._walk_mode_set_active(False, reason=str(reason or "forced_exit"))
+                    return
+                if bool(getattr(self, "_walk_mode_capture_active", False)):
+                    self._set_walk_mode_capture(False)
+                    self._walk_mode_scaffold_pressed = set()
+
             def _camera_modifier_active(self, modifiers: int) -> bool:
                 return bool(modifiers & pyglet.window.key.MOD_OPTION)
 
@@ -11191,8 +11280,9 @@ def view_datapack_opengl(  # pragma: no cover
                 self._hud_block_entities_live = be_count
                 depth = len(self.jigsaw_seeds)
                 fx_state = "OFF" if not self._effects_enabled else "ON"
+                walk_state = "WALK" if bool(getattr(self, "_walk_mode_active", False)) else "NAV"
                 self.status_labels[0].text = (
-                    f"depth {depth}  blocks {_fmt_count(blocks)}  ent {_fmt_count(ent_count)}  be {_fmt_count(be_count)}  FX {fx_state}"
+                    f"depth {depth}  blocks {_fmt_count(blocks)}  ent {_fmt_count(ent_count)}  be {_fmt_count(be_count)}  FX {fx_state}  {walk_state}"
                 )
 
             def _update_status(self) -> None:
@@ -11221,12 +11311,15 @@ def view_datapack_opengl(  # pragma: no cover
 
                 env_name = self._env_preset().name
                 fx_state = "OFF" if not self._effects_enabled else "ON"
+                walk_state = "WALK" if bool(getattr(self, "_walk_mode_active", False)) else "NAV"
                 lines: list[str] = [
                     (
                         f"depth {depth}  blocks {_fmt_count(blocks)}  ent {_fmt_count(ent_count)}  "
-                        f"be {_fmt_count(be_count)}  env {env_name}  FX {fx_state}"
+                        f"be {_fmt_count(be_count)}  env {env_name}  FX {fx_state}  {walk_state}"
                     )
                 ]
+                if bool(getattr(self, "_walk_mode_active", False)):
+                    lines.append("WALK MODE ACTIVE: Esc exits   movement keys captured (Phase A scaffold)")
                 if depth:
                     lines.append(f"seed: 0x{self.jigsaw_seeds[-1]:08x}   (Space reroll)")
                 else:
@@ -11269,6 +11362,10 @@ def view_datapack_opengl(  # pragma: no cover
                 if self._last_export is not None:
                     lines.append(f"last export: {self._last_export.name}")
                 self._set_status(lines[: self.status_lines_max])
+                try:
+                    self.walk_mode_label.visible = bool(getattr(self, "_walk_mode_active", False))
+                except Exception:
+                    pass
                 self._hud_blocks_live = blocks
                 self._hud_entities_live = ent_count
                 self._hud_block_entities_live = be_count
@@ -12204,6 +12301,8 @@ def view_datapack_opengl(  # pragma: no cover
                         self.invalid = True
                     if route.consumed:
                         return
+                if bool(getattr(self, "_walk_mode_active", False)) and x >= self.sidebar_width:
+                    return
                 if x < self.sidebar_width:
                     return
                 # Camera controls are only active while holding ⌥ (Option) so
@@ -12290,6 +12389,8 @@ def view_datapack_opengl(  # pragma: no cover
                         if changed:
                             self._update_list_labels(ensure_selection_visible=False)
                     return
+                if bool(getattr(self, "_walk_mode_active", False)) and x >= self.sidebar_width:
+                    return
                 if self._mac_gestures_enabled:
                     self._scroll_last_mode = "disabled"
                     self._scroll_last_sx = float(scroll_x)
@@ -12373,6 +12474,8 @@ def view_datapack_opengl(  # pragma: no cover
                 region = "sidebar" if x < self.sidebar_width else "model"
                 self._dbg_last_pyglet_event = f"press {region} btn={button} x={x} y={y}"
                 self._dbg_last_pyglet_event_t = time.monotonic()
+                if bool(getattr(self, "_walk_mode_active", False)) and x >= self.sidebar_width:
+                    return
 
                 if self._palette_visible():
                     from enderterm.termui import route_tool_window_click
@@ -12576,6 +12679,8 @@ def view_datapack_opengl(  # pragma: no cover
                         target_id=str(self._term_list_mouse_target),
                         scrollbar=self._term_list_scrollbar,
                     )
+                if bool(getattr(self, "_walk_mode_active", False)) and x >= self.sidebar_width:
+                    return
                 if button == pyglet.window.mouse.LEFT and self._sidebar_resize_active:
                     self._sidebar_resize_active = False
                     if float(self.sidebar_width) < 0.5:
@@ -12595,6 +12700,40 @@ def view_datapack_opengl(  # pragma: no cover
                             events.append((int(symbol), int(modifiers), float(time.monotonic())))
                 except Exception:
                     pass
+                cmd_mod = getattr(pyglet.window.key, "MOD_COMMAND", 0) | getattr(pyglet.window.key, "MOD_ACCEL", 0)
+                walk_action = _walk_mode_key_action(
+                    active=bool(getattr(self, "_walk_mode_active", False)),
+                    symbol=int(symbol),
+                    modifiers=int(modifiers),
+                    toggle_symbol=int(getattr(pyglet.window.key, "L", -1)),
+                    escape_symbol=int(pyglet.window.key.ESCAPE),
+                    cmd_mod=int(cmd_mod),
+                    scaffold_symbols={
+                        int(getattr(pyglet.window.key, "W", -1)),
+                        int(getattr(pyglet.window.key, "A", -1)),
+                        int(getattr(pyglet.window.key, "S", -1)),
+                        int(getattr(pyglet.window.key, "D", -1)),
+                        int(getattr(pyglet.window.key, "SPACE", -1)),
+                        int(getattr(pyglet.window.key, "LCTRL", -1)),
+                        int(getattr(pyglet.window.key, "RCTRL", -1)),
+                        int(getattr(pyglet.window.key, "LSHIFT", -1)),
+                        int(getattr(pyglet.window.key, "RSHIFT", -1)),
+                    },
+                )
+                if walk_action == "toggle_on" and bool(self._search_active):
+                    walk_action = "pass"
+                if walk_action == "toggle_on":
+                    self._walk_mode_set_active(True, reason="key_toggle")
+                    return
+                if walk_action == "toggle_off":
+                    self._walk_mode_set_active(False, reason="key_toggle")
+                    return
+                if walk_action == "exit_escape":
+                    self._walk_mode_set_active(False, reason="key_escape")
+                    return
+                if walk_action == "consume_scaffold":
+                    self._walk_mode_scaffold_pressed.add(int(symbol))
+                    return
                 if symbol == pyglet.window.key.TAB:
                     self._toggle_ui_hidden()
                     return
@@ -12680,7 +12819,6 @@ def view_datapack_opengl(  # pragma: no cover
                         return
                     return
 
-                cmd_mod = getattr(pyglet.window.key, "MOD_COMMAND", 0) | getattr(pyglet.window.key, "MOD_ACCEL", 0)
                 if (modifiers & cmd_mod) and symbol == pyglet.window.key.Z:
                     if modifiers & pyglet.window.key.MOD_SHIFT:
                         self._build_do_redo()
@@ -12903,6 +13041,23 @@ def view_datapack_opengl(  # pragma: no cover
                     self._set_search_query(self._search_query + ch)
 
             def on_key_release(self, symbol: int, modifiers: int) -> None:
+                if int(symbol) in set(getattr(self, "_walk_mode_scaffold_pressed", set())):
+                    try:
+                        self._walk_mode_scaffold_pressed.discard(int(symbol))
+                    except Exception:
+                        self._walk_mode_scaffold_pressed = set()
+                if bool(getattr(self, "_walk_mode_active", False)) and int(symbol) in {
+                    int(getattr(pyglet.window.key, "W", -1)),
+                    int(getattr(pyglet.window.key, "A", -1)),
+                    int(getattr(pyglet.window.key, "S", -1)),
+                    int(getattr(pyglet.window.key, "D", -1)),
+                    int(getattr(pyglet.window.key, "SPACE", -1)),
+                    int(getattr(pyglet.window.key, "LCTRL", -1)),
+                    int(getattr(pyglet.window.key, "RCTRL", -1)),
+                    int(getattr(pyglet.window.key, "LSHIFT", -1)),
+                    int(getattr(pyglet.window.key, "RSHIFT", -1)),
+                }:
+                    return
                 if symbol == self._repeat_symbol:
                     self._repeat_symbol = None
                     self._repeat_next_at_s = 0.0
@@ -12919,6 +13074,7 @@ def view_datapack_opengl(  # pragma: no cover
             def on_deactivate(self) -> None:
                 from enderterm.termui import route_window_focus_keyboard
 
+                self._walk_mode_force_exit(reason="deactivate")
                 route_window_focus_keyboard(window=self, activated=False)
 
             def on_file_drop(self, x: int, y: int, paths: list[str]) -> None:
