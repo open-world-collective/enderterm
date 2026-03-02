@@ -23,6 +23,9 @@ from enderterm.clip_defaults import (
 _LIGHT0_AMBIENT = (c_float * 4)(0.2, 0.2, 0.2, 1.0)
 _LIGHT0_DIFFUSE = (c_float * 4)(0.9, 0.9, 0.9, 1.0)
 _LIGHT0_POSITION = (c_float * 4)(0.35, 0.9, 0.5, 0.0)
+_PERSPECTIVE_CLIP_NEAR_FLOOR = 1.0e-3
+_PERSPECTIVE_CLIP_FAR_CEIL = 20000.0
+_PERSPECTIVE_CLIP_MAX_RATIO = 20000.0
 
 
 def _apply_default_scene_lighting(gl: Any, *, set_position: bool) -> None:
@@ -278,6 +281,18 @@ def _compute_bounds_depth_min(
     bounds_i: tuple[float, float, float, float, float, float],
 ) -> float | None:
     """Return nearest positive camera-space depth for model bounds corners."""
+    depth_range = _compute_bounds_depth_range(self, bounds_i=bounds_i)
+    if depth_range is None:
+        return None
+    return float(depth_range[0])
+
+
+def _compute_bounds_depth_range(
+    self: Any,
+    *,
+    bounds_i: tuple[float, float, float, float, float, float],
+) -> tuple[float, float] | None:
+    """Return nearest/farthest positive camera-space depth for model bounds corners."""
     min_x, min_y, min_z, max_x, max_y, max_z = bounds_i
     cx, cy, cz = getattr(self, "_pivot_center", (0.0, 0.0, 0.0))
     min_geom_x = float(min_x) - float(cx)
@@ -300,6 +315,7 @@ def _compute_bounds_depth_min(
     pitch_sin = math.sin(pitch_rad)
 
     depth_min: float | None = None
+    depth_max: float | None = None
     for x in (min_geom_x, max_geom_x):
         for y in (min_geom_y, max_geom_y):
             for z in (min_geom_z, max_geom_z):
@@ -317,7 +333,11 @@ def _compute_bounds_depth_min(
                     continue
                 if depth_min is None or depth < depth_min:
                     depth_min = depth
-    return depth_min
+                if depth_max is None or depth > depth_max:
+                    depth_max = depth
+    if depth_min is None or depth_max is None:
+        return None
+    return (float(depth_min), float(depth_max))
 
 
 def _resolve_ortho_clip_near(self: Any, *, default_near: float) -> float:
@@ -334,6 +354,46 @@ def _resolve_ortho_clip_near(self: Any, *, default_near: float) -> float:
         return min(float(clip_near), max(float(near_floor), float(depth_min) * 0.25))
     except Exception:
         return clip_near
+
+
+def _resolve_perspective_clip_planes(
+    self: Any,
+    *,
+    default_near: float,
+    default_far: float,
+) -> tuple[float, float]:
+    """Resolve perspective near/far planes using scene depth and precision guards."""
+    clip_near = float(default_near)
+    clip_far = float(default_far)
+    try:
+        bounds_i = _resolve_model_bounds_i(self)
+        if bounds_i is None:
+            return (clip_near, clip_far)
+        depth_range = _compute_bounds_depth_range(self, bounds_i=bounds_i)
+        if depth_range is None:
+            return (clip_near, clip_far)
+        depth_min, depth_max = depth_range
+        if not math.isfinite(depth_min) or not math.isfinite(depth_max):
+            return (clip_near, clip_far)
+
+        near_floor = float(_PERSPECTIVE_CLIP_NEAR_FLOOR)
+        clip_near = min(float(clip_near), max(float(near_floor), float(depth_min) * 0.25))
+        margin = max(64.0, float(depth_max) * 0.20)
+        env_extent = max(0.0, float(getattr(self, "_env_ground_radius", 0.0)) * 4.0)
+        desired_far = max(float(depth_max) + float(margin), float(getattr(self, "distance", 0.0)) + env_extent + 64.0)
+        if desired_far < float(default_far):
+            clip_far = max(float(clip_near) + 8.0, float(desired_far))
+        else:
+            clip_far = min(float(_PERSPECTIVE_CLIP_FAR_CEIL), max(float(clip_near) + 8.0, float(desired_far)))
+
+        max_ratio = float(_PERSPECTIVE_CLIP_MAX_RATIO)
+        if clip_far / max(1e-9, float(clip_near)) > max_ratio:
+            clip_near = max(float(clip_near), float(clip_far) / max_ratio)
+        clip_near = max(float(near_floor), float(clip_near))
+        clip_far = max(float(clip_near) + 8.0, float(clip_far))
+        return (float(clip_near), float(clip_far))
+    except Exception:
+        return (float(default_near), float(default_far))
 
 
 def draw_world_3d(
@@ -375,6 +435,11 @@ def draw_world_3d(
 
         gl.glOrtho(-half_x, half_x, -half_y, half_y, float(clip_near), float(clip_far))
     else:
+        clip_near, clip_far = _resolve_perspective_clip_planes(
+            self,
+            default_near=float(PERSPECTIVE_CLIP_NEAR_DEFAULT),
+            default_far=float(CLIP_FAR_DEFAULT),
+        )
         gluPerspective(fovy, max(1e-6, float(aspect)), float(clip_near), float(clip_far))
 
     # Share the effective clip planes with post-fx (e.g. SSAO depth linearization).

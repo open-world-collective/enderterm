@@ -46,9 +46,11 @@ from enderterm.datapack_viewer import (
     _safe_window_gl_cleanup,
     _smoke_hex_hamming_distance,
     _smoke_signature_from_rgba,
+    _walk_mode_apply_collision_y,
     _walk_mode_apply_collision_xz,
     _walk_mode_forward_xz,
     _walk_mode_integrate_xz,
+    _walk_mode_integrate_y,
     _walk_mode_key_action,
     _walk_mode_move_direction_xz,
     _walk_mode_point_blocked,
@@ -538,6 +540,67 @@ def test_walk_mode_apply_collision_xz_prevents_tunneling_and_allows_clear_motion
     )
     assert abs(clear_dx - 0.75) <= 1e-9
     assert abs(clear_dz + 0.25) <= 1e-9
+
+
+def test_walk_mode_apply_collision_y_prevents_vertical_tunneling() -> None:
+    resolved_dy, hit = _walk_mode_apply_collision_y(
+        start_x_u=0.1,
+        start_y_u=3.0,
+        start_z_u=0.1,
+        move_dy_u=-3.0,
+        solid_positions={(0, 1, 0)},
+        max_substep_u=0.5,
+    )
+    assert hit is True
+    assert abs(resolved_dy + 1.0) <= 1e-9
+
+
+def test_walk_mode_integrate_y_handles_ground_hold_and_jump_deterministically() -> None:
+    hold_dy, hold_vel, hold_carry, hold_grounded, hold_jump_pending = _walk_mode_integrate_y(
+        start_x_u=0.1,
+        start_y_u=1.0,
+        start_z_u=0.1,
+        frame_dt_s=0.1,
+        carry_dt_s=0.0,
+        fixed_dt_s=0.1,
+        max_steps=4,
+        vel_y_u_s=0.0,
+        gravity_u_s2=-10.0,
+        jump_speed_u_s=6.0,
+        jump_queued=False,
+        was_grounded=True,
+        solid_positions={(0, 0, 0)},
+        collision_substep_u=0.25,
+        ground_probe_u=0.08,
+    )
+    assert abs(hold_dy - 0.0) <= 1e-9
+    assert abs(hold_vel - 0.0) <= 1e-9
+    assert abs(hold_carry - 0.0) <= 1e-9
+    assert hold_grounded is True
+    assert hold_jump_pending is False
+
+    jump_dy, jump_vel, jump_carry, jump_grounded, jump_pending = _walk_mode_integrate_y(
+        start_x_u=0.1,
+        start_y_u=1.0,
+        start_z_u=0.1,
+        frame_dt_s=0.1,
+        carry_dt_s=0.0,
+        fixed_dt_s=0.1,
+        max_steps=4,
+        vel_y_u_s=0.0,
+        gravity_u_s2=-10.0,
+        jump_speed_u_s=6.0,
+        jump_queued=True,
+        was_grounded=True,
+        solid_positions={(0, 0, 0)},
+        collision_substep_u=0.25,
+        ground_probe_u=0.08,
+    )
+    assert jump_dy > 0.0
+    assert jump_vel > 0.0
+    assert abs(jump_carry - 0.0) <= 1e-9
+    assert jump_grounded is False
+    assert jump_pending is False
 
 
 def test_render_cap_schedule_catchup_step_is_bounded() -> None:
@@ -1878,6 +1941,8 @@ def test_datapack_viewer_walk_mode_scaffold_hooks_present() -> None:
     assert 'toggle_symbol=int(getattr(pyglet.window.key, "W", -1))' in source
     assert "if walk_action == \"exit_escape\":" in source
     assert "self._walk_mode_set_active(False, reason=\"key_escape\")" in source
+    assert 'if int(symbol) == int(getattr(pyglet.window.key, "SPACE", -1)):' in source
+    assert "self._walk_mode_jump_queued = True" in source
     assert "self.walk_mode_label = pyglet.text.Label(" in source
     assert "WALK MODE ACTIVE  (Esc exits)" in source
 
@@ -1918,13 +1983,15 @@ def test_datapack_viewer_escape_and_q_no_longer_quit_main_window() -> None:
     assert "Esc/Q quit" not in source
 
 
-def test_datapack_viewer_walk_mode_integrator_updates_orbit_xz_only() -> None:
+def test_datapack_viewer_walk_mode_integrator_updates_orbit_with_vertical_phase() -> None:
     source = _datapack_viewer_source()
     assert "walk_forward_xz = _walk_mode_forward_xz(" in source
     assert "move_dx, move_dz, move_carry = _walk_mode_integrate_xz(" in source
     assert "forward_xz=walk_forward_xz" in source
     assert "resolved_dx, resolved_dz = _walk_mode_apply_collision_xz(" in source
-    assert "self._orbit_target = (float(ox) + float(resolved_dx), float(oy), float(oz) + float(resolved_dz))" in source
+    assert "move_dy, next_vel_y, next_vertical_carry, next_grounded, jump_pending = _walk_mode_integrate_y(" in source
+    assert "self._walk_mode_jump_queued = bool(jump_pending)" in source
+    assert "float(oy) + float(move_dy)" in source
 
 
 def test_datapack_viewer_walk_mode_capture_releases_on_focus_and_tool_window_paths() -> None:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 
 import pytest
-from enderterm.clip_defaults import ORTHO_CLIP_NEAR_DEFAULT
+from enderterm.clip_defaults import CLIP_FAR_DEFAULT, ORTHO_CLIP_NEAR_DEFAULT, PERSPECTIVE_CLIP_NEAR_DEFAULT
 from enderterm import geom
 from enderterm import render_world
 
@@ -232,6 +232,65 @@ def test_ortho_clip_near_shrinks_for_close_depth_and_exports_planes(monkeypatch)
     assert far == 5000.0
     assert abs(float(getattr(viewer, "_clip_near")) - near) < 1e-9
     assert float(getattr(viewer, "_clip_far")) == far
+
+
+def test_resolve_perspective_clip_planes_uses_defaults_without_bounds() -> None:
+    viewer = _Viewer(effects_enabled=False)
+    viewer._ortho_enabled = False
+    viewer._pick_bounds_i = None
+    near, far = render_world._resolve_perspective_clip_planes(
+        viewer,
+        default_near=PERSPECTIVE_CLIP_NEAR_DEFAULT,
+        default_far=CLIP_FAR_DEFAULT,
+    )
+    assert near == PERSPECTIVE_CLIP_NEAR_DEFAULT
+    assert far == CLIP_FAR_DEFAULT
+
+
+def test_resolve_perspective_clip_planes_tightens_far_for_local_scene() -> None:
+    viewer = _Viewer(effects_enabled=False)
+    viewer._ortho_enabled = False
+    viewer.distance = 8.0
+    viewer._pick_bounds_i = (0, 0, 0, 0, 0, 0)
+    near, far = render_world._resolve_perspective_clip_planes(
+        viewer,
+        default_near=PERSPECTIVE_CLIP_NEAR_DEFAULT,
+        default_far=CLIP_FAR_DEFAULT,
+    )
+    assert 0.001 <= near <= PERSPECTIVE_CLIP_NEAR_DEFAULT
+    assert near < far
+    assert far < CLIP_FAR_DEFAULT
+
+
+def test_resolve_perspective_clip_planes_expands_far_for_large_depths() -> None:
+    viewer = _Viewer(effects_enabled=False)
+    viewer._ortho_enabled = False
+    viewer.distance = 8.0
+    viewer._pick_bounds_i = (-1, -1, -12000, 1, 1, -11999)
+    near, far = render_world._resolve_perspective_clip_planes(
+        viewer,
+        default_near=PERSPECTIVE_CLIP_NEAR_DEFAULT,
+        default_far=CLIP_FAR_DEFAULT,
+    )
+    assert far > CLIP_FAR_DEFAULT
+    assert near >= PERSPECTIVE_CLIP_NEAR_DEFAULT
+    assert near < far
+
+
+def test_draw_world_perspective_exports_adaptive_clip_planes(monkeypatch) -> None:
+    _patch_common_fx(monkeypatch)
+    viewer = _Viewer(effects_enabled=False)
+    viewer._ortho_enabled = False
+    viewer.distance = 8.0
+    viewer._pick_bounds_i = (0, 0, 0, 0, 0, 0)
+
+    _gl, perspective_calls = _draw_world_for_test(viewer)
+    assert len(perspective_calls) == 1
+    _fovy, _aspect, near, far = perspective_calls[0]
+    assert near <= PERSPECTIVE_CLIP_NEAR_DEFAULT
+    assert far < CLIP_FAR_DEFAULT
+    assert float(getattr(viewer, "_clip_near")) == pytest.approx(float(near))
+    assert float(getattr(viewer, "_clip_far")) == pytest.approx(float(far))
 
 
 def test_resolve_model_bounds_prefers_current_model_bounds_callable() -> None:
