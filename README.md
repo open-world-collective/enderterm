@@ -1,4 +1,4 @@
-# enderterm
+# EnderTerm
 
 World interface and tooling repo for Open World Collective.
 
@@ -7,11 +7,6 @@ World interface and tooling repo for Open World Collective.
 - Structure/world inspection tooling
 - Datapack and world-interface workflows
 - Integration tooling around standard vanilla Java clients
-
-## Explicit non-goals (for now)
-
-- Not a gameplay client
-- Not a replacement engine runtime
 
 ## Strategic direction
 
@@ -25,13 +20,9 @@ See [ROADMAP.md](ROADMAP.md) for milestone and architecture targets.
 
 [![EnderTerm demo video (end city)](https://img.youtube.com/vi/ATlpDlLXqsc/hqdefault.jpg)](https://www.youtube.com/watch?v=ATlpDlLXqsc)
 
-Watch on YouTube (end city): https://www.youtube.com/watch?v=ATlpDlLXqsc
-
 ### ancient city center
 
 [![EnderTerm demo video (ancient city center)](https://img.youtube.com/vi/L5Iz9k-WMbc/hqdefault.jpg)](https://www.youtube.com/watch?v=L5Iz9k-WMbc)
-
-Watch on YouTube (ancient city center): https://www.youtube.com/watch?v=L5Iz9k-WMbc
 
 ## License
 
