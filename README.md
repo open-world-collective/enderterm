@@ -16,13 +16,13 @@ See [ROADMAP.md](ROADMAP.md) for milestone and architecture targets.
 
 ## Demo videos
 
-### end city
-
-[![EnderTerm demo video (end city)](https://img.youtube.com/vi/ATlpDlLXqsc/hqdefault.jpg)](https://www.youtube.com/watch?v=ATlpDlLXqsc)
-
 ### ancient city center
 
 [![EnderTerm demo video (ancient city center)](https://img.youtube.com/vi/L5Iz9k-WMbc/hqdefault.jpg)](https://www.youtube.com/watch?v=L5Iz9k-WMbc)
+
+### end city
+
+[![EnderTerm demo video (end city)](https://img.youtube.com/vi/ATlpDlLXqsc/hqdefault.jpg)](https://www.youtube.com/watch?v=ATlpDlLXqsc)
 
 ## License
 
