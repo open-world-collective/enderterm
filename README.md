@@ -14,6 +14,10 @@ Start vanilla-compatible, then progressively separate interfaces from engine-spe
 
 See [ROADMAP.md](ROADMAP.md) for milestone and architecture targets.
 
+## AI provider policy
+
+See [AI_PROVIDER_POLICY.md](AI_PROVIDER_POLICY.md).
+
 ## Demo videos
 
 ### ancient city center
