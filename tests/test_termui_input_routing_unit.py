@@ -6,6 +6,10 @@ Run with:
 
 from __future__ import annotations
 
+import math
+
+from enderterm import params as params_mod
+import enderterm.render_world as render_world_mod
 import enderterm.termui as termui_mod
 from enderterm.termui import (
     _mouse_route_matches_capture,
@@ -46,12 +50,17 @@ from enderterm.datapack_viewer import (
     _safe_window_gl_cleanup,
     _smoke_hex_hamming_distance,
     _smoke_signature_from_rgba,
+    _walk_mode_body_blocked,
+    _walk_mode_body_sample_points,
+    _walk_mode_anchor_orbit_target,
     _walk_mode_apply_collision_y,
     _walk_mode_apply_collision_xz,
+    _walk_mode_effective_speed_u_s,
     _walk_mode_forward_xz,
     _walk_mode_integrate_xz,
     _walk_mode_integrate_y,
     _walk_mode_key_action,
+    _walk_mode_mouse_look_delta,
     _walk_mode_move_direction_xz,
     _walk_mode_point_blocked,
 )
@@ -77,6 +86,12 @@ def _source_method_blocks(source: str, *, signature: str, window: int) -> list[s
 
 def _kvalue_window_source() -> str:
     source_path = create_term_param_window.__code__.co_filename
+    with open(source_path, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+def _render_world_source() -> str:
+    source_path = render_world_mod.draw_world_3d.__code__.co_filename
     with open(source_path, "r", encoding="utf-8") as f:
         return f.read()
 
@@ -322,6 +337,65 @@ def test_walk_mode_key_action_transitions_and_precedence() -> None:
     ) == "consume_scaffold"
 
 
+def test_walk_mode_toggle_on_w_seeds_pressed_state_and_next_step_moves_forward() -> None:
+    source = _datapack_viewer_source()
+    key_blocks = _source_method_blocks(
+        source,
+        signature="def on_key_press(self, symbol: int, modifiers: int) -> None:",
+        window=18000,
+    )
+    main_block = next(
+        b for b in key_blocks if "walk_action = _walk_mode_key_action(" in b and "_toggle_second_viewport_window()" in b
+    )
+    toggle_idx = main_block.find('if walk_action == "toggle_on":')
+    assert toggle_idx >= 0
+    toggle_block = main_block[toggle_idx : toggle_idx + 260]
+    assert 'self._walk_mode_set_active(True, reason="key_toggle")' in toggle_block
+    assert "if int(symbol) in walk_scaffold_symbols:" in toggle_block
+    assert "self._walk_mode_scaffold_pressed.add(int(symbol))" in toggle_block
+
+    key_w = 87
+    key_a = 65
+    key_s = 83
+    key_d = 68
+    key_escape = 27
+    cmd_mod = 0x100 | 0x200
+    scaffold = {key_w, key_a, key_s, key_d, 32, 340, 344, 341, 345}
+
+    action = _walk_mode_key_action(
+        active=False,
+        symbol=key_w,
+        modifiers=0,
+        toggle_symbol=key_w,
+        escape_symbol=key_escape,
+        cmd_mod=cmd_mod,
+        scaffold_symbols=set(scaffold),
+    )
+    assert action == "toggle_on"
+
+    pressed = set()
+    if action == "toggle_on" and key_w in scaffold:
+        pressed.add(key_w)
+    assert key_w in pressed
+
+    dx, dz, carry = _walk_mode_integrate_xz(
+        pressed_symbols=set(pressed),
+        yaw_deg=0.0,
+        frame_dt_s=1.0 / 60.0,
+        carry_dt_s=0.0,
+        fixed_dt_s=1.0 / 120.0,
+        max_steps=8,
+        speed_u_per_s=6.0,
+        key_w=key_w,
+        key_a=key_a,
+        key_s=key_s,
+        key_d=key_d,
+    )
+    assert abs(dx) + abs(dz) > 1e-6
+    assert dz < 0.0
+    assert 0.0 <= carry <= (1.0 / 120.0)
+
+
 def test_walk_mode_move_direction_xz_follows_yaw_and_normalizes_diagonals() -> None:
     keys = {"w": 87, "a": 65, "s": 83, "d": 68}
     dx, dz = _walk_mode_move_direction_xz(
@@ -396,6 +470,231 @@ def test_walk_mode_forward_xz_uses_horizontal_projection_and_ignores_vertical_de
     assert abs(fz_fallback - 0.0) <= 1e-9
 
 
+def test_walk_mode_heading_tracks_live_yaw_updates() -> None:
+    keys = {"w": 87, "a": 65, "s": 83, "d": 68}
+    yaw_a = 0.0
+    yaw_b = 90.0
+
+    fwd_a = _walk_mode_forward_xz(yaw_deg=float(yaw_a))
+    fwd_b = _walk_mode_forward_xz(yaw_deg=float(yaw_b))
+
+    dx_a, dz_a, _carry_a = _walk_mode_integrate_xz(
+        pressed_symbols={keys["w"]},
+        yaw_deg=float(yaw_a),
+        forward_xz=fwd_a,
+        frame_dt_s=1.0 / 60.0,
+        carry_dt_s=0.0,
+        fixed_dt_s=1.0 / 120.0,
+        max_steps=8,
+        speed_u_per_s=6.0,
+        key_w=keys["w"],
+        key_a=keys["a"],
+        key_s=keys["s"],
+        key_d=keys["d"],
+    )
+    dx_b, dz_b, _carry_b = _walk_mode_integrate_xz(
+        pressed_symbols={keys["w"]},
+        yaw_deg=float(yaw_b),
+        forward_xz=fwd_b,
+        frame_dt_s=1.0 / 60.0,
+        carry_dt_s=0.0,
+        fixed_dt_s=1.0 / 120.0,
+        max_steps=8,
+        speed_u_per_s=6.0,
+        key_w=keys["w"],
+        key_a=keys["a"],
+        key_s=keys["s"],
+        key_d=keys["d"],
+    )
+    assert abs(dx_a) <= 1e-9
+    assert dz_a < 0.0
+    assert dx_b > 0.0
+    assert abs(dz_b) <= 1e-9
+
+
+def test_walk_mode_mouse_look_delta_updates_yaw_pitch_and_heading() -> None:
+    keys = {"w": 87, "a": 65, "s": 83, "d": 68}
+    yaw_a, pitch_a = _walk_mode_mouse_look_delta(
+        active=True,
+        yaw_deg=15.0,
+        pitch_deg=10.0,
+        dx_px=40.0,
+        dy_px=-30.0,
+        sensitivity_deg_per_px=0.35,
+    )
+    assert yaw_a > 15.0
+    assert pitch_a > 10.0
+
+    yaw_b, pitch_b = _walk_mode_mouse_look_delta(
+        active=True,
+        yaw_deg=float(yaw_a),
+        pitch_deg=float(pitch_a),
+        dx_px=0.0,
+        dy_px=9_999.0,
+        sensitivity_deg_per_px=0.35,
+    )
+    assert abs(yaw_b - yaw_a) <= 1e-9
+    assert pitch_b == -89.0
+
+    fwd_x, fwd_z = _walk_mode_forward_xz(yaw_deg=float(yaw_b))
+    move_x, move_z, _carry = _walk_mode_integrate_xz(
+        pressed_symbols={keys["w"]},
+        yaw_deg=float(yaw_b),
+        forward_xz=(float(fwd_x), float(fwd_z)),
+        frame_dt_s=1.0 / 60.0,
+        carry_dt_s=0.0,
+        fixed_dt_s=1.0 / 120.0,
+        max_steps=8,
+        speed_u_per_s=6.0,
+        key_w=keys["w"],
+        key_a=keys["a"],
+        key_s=keys["s"],
+        key_d=keys["d"],
+    )
+    assert math.hypot(float(move_x), float(move_z)) > 0.0
+    heading_dot = (float(move_x) * float(fwd_x)) + (float(move_z) * float(fwd_z))
+    assert heading_dot > 0.0
+
+    yaw_idle, pitch_idle = _walk_mode_mouse_look_delta(
+        active=False,
+        yaw_deg=33.0,
+        pitch_deg=-12.0,
+        dx_px=50.0,
+        dy_px=25.0,
+        sensitivity_deg_per_px=0.35,
+    )
+    assert yaw_idle == 33.0
+    assert pitch_idle == -12.0
+
+
+def _camera_world_from_orbit_state(
+    *,
+    orbit_target: tuple[float, float, float],
+    yaw_deg: float,
+    pitch_deg: float,
+    pan_x: float,
+    pan_y: float,
+    distance: float,
+) -> tuple[float, float, float]:
+    rad_x = math.radians(-float(pitch_deg))
+    rad_y = math.radians(-float(yaw_deg))
+    v_x = -float(pan_x)
+    v_y = -float(pan_y)
+    v_z = float(distance)
+    cos_x = math.cos(rad_x)
+    sin_x = math.sin(rad_x)
+    rx_x = v_x
+    rx_y = (v_y * cos_x) - (v_z * sin_x)
+    rx_z = (v_y * sin_x) + (v_z * cos_x)
+    cos_y = math.cos(rad_y)
+    sin_y = math.sin(rad_y)
+    ry_x = (rx_x * cos_y) + (rx_z * sin_y)
+    ry_y = rx_y
+    ry_z = (-rx_x * sin_y) + (rx_z * cos_y)
+    return (
+        float(orbit_target[0] + ry_x),
+        float(orbit_target[1] + ry_y),
+        float(orbit_target[2] + ry_z),
+    )
+
+
+def test_walk_mode_anchor_orbit_target_preserves_world_position_on_look_delta() -> None:
+    orbit = (2.5, -1.0, 4.25)
+    yaw = 35.0
+    pitch = 18.0
+    pan_x = 0.35
+    pan_y = -0.22
+    distance = 7.0
+    before = _camera_world_from_orbit_state(
+        orbit_target=orbit,
+        yaw_deg=float(yaw),
+        pitch_deg=float(pitch),
+        pan_x=float(pan_x),
+        pan_y=float(pan_y),
+        distance=float(distance),
+    )
+    yaw_next, pitch_next = _walk_mode_mouse_look_delta(
+        active=True,
+        yaw_deg=float(yaw),
+        pitch_deg=float(pitch),
+        dx_px=42.0,
+        dy_px=-19.0,
+        sensitivity_deg_per_px=0.35,
+    )
+    after_unanchored = _camera_world_from_orbit_state(
+        orbit_target=orbit,
+        yaw_deg=float(yaw_next),
+        pitch_deg=float(pitch_next),
+        pan_x=float(pan_x),
+        pan_y=float(pan_y),
+        distance=float(distance),
+    )
+    drift_before_fix = math.dist(before, after_unanchored)
+    assert drift_before_fix > 1e-3
+    anchored_orbit = _walk_mode_anchor_orbit_target(
+        orbit_target_u=orbit,
+        anchor_camera_world_u=before,
+        camera_world_after_u=after_unanchored,
+    )
+    after_anchored = _camera_world_from_orbit_state(
+        orbit_target=anchored_orbit,
+        yaw_deg=float(yaw_next),
+        pitch_deg=float(pitch_next),
+        pan_x=float(pan_x),
+        pan_y=float(pan_y),
+        distance=float(distance),
+    )
+    assert math.dist(before, after_anchored) <= 1e-9
+
+
+def test_walk_mode_anchor_orbit_target_prevents_cumulative_look_drift() -> None:
+    orbit = (0.0, 0.0, 0.0)
+    yaw = 10.0
+    pitch = -5.0
+    pan_x = 0.45
+    pan_y = 0.1
+    distance = 9.0
+    for dx_px, dy_px in [(8.0, -4.0), (-3.0, 7.0), (5.0, -6.0), (11.0, 3.0), (-9.0, -8.0)]:
+        before = _camera_world_from_orbit_state(
+            orbit_target=orbit,
+            yaw_deg=float(yaw),
+            pitch_deg=float(pitch),
+            pan_x=float(pan_x),
+            pan_y=float(pan_y),
+            distance=float(distance),
+        )
+        yaw, pitch = _walk_mode_mouse_look_delta(
+            active=True,
+            yaw_deg=float(yaw),
+            pitch_deg=float(pitch),
+            dx_px=float(dx_px),
+            dy_px=float(dy_px),
+            sensitivity_deg_per_px=0.35,
+        )
+        after_unanchored = _camera_world_from_orbit_state(
+            orbit_target=orbit,
+            yaw_deg=float(yaw),
+            pitch_deg=float(pitch),
+            pan_x=float(pan_x),
+            pan_y=float(pan_y),
+            distance=float(distance),
+        )
+        orbit = _walk_mode_anchor_orbit_target(
+            orbit_target_u=orbit,
+            anchor_camera_world_u=before,
+            camera_world_after_u=after_unanchored,
+        )
+        after_anchored = _camera_world_from_orbit_state(
+            orbit_target=orbit,
+            yaw_deg=float(yaw),
+            pitch_deg=float(pitch),
+            pan_x=float(pan_x),
+            pan_y=float(pan_y),
+            distance=float(distance),
+        )
+        assert math.dist(before, after_anchored) <= 1e-9
+
+
 def test_walk_mode_move_direction_respects_forward_override_mapping() -> None:
     keys = {"w": 87, "a": 65, "s": 83, "d": 68}
     fwd_dx, fwd_dz = _walk_mode_move_direction_xz(
@@ -422,6 +721,61 @@ def test_walk_mode_move_direction_respects_forward_override_mapping() -> None:
     assert abs(back_dz - 0.0) <= 1e-9
 
 
+def test_walk_mode_mouse_look_delta_updates_yaw_pitch_and_clamps() -> None:
+    yaw, pitch = _walk_mode_mouse_look_delta(
+        active=True,
+        yaw_deg=10.0,
+        pitch_deg=20.0,
+        dx_px=5.0,
+        dy_px=-4.0,
+        sensitivity_deg_per_px=0.5,
+        pitch_min_deg=-60.0,
+        pitch_max_deg=60.0,
+    )
+    assert abs(yaw - 12.5) <= 1e-9
+    assert abs(pitch - 22.0) <= 1e-9
+
+    _yaw2, pitch2 = _walk_mode_mouse_look_delta(
+        active=True,
+        yaw_deg=0.0,
+        pitch_deg=58.0,
+        dx_px=0.0,
+        dy_px=-10.0,
+        sensitivity_deg_per_px=1.0,
+        pitch_min_deg=-60.0,
+        pitch_max_deg=60.0,
+    )
+    assert abs(pitch2 - 60.0) <= 1e-9
+
+    yaw_idle, pitch_idle = _walk_mode_mouse_look_delta(
+        active=False,
+        yaw_deg=3.0,
+        pitch_deg=4.0,
+        dx_px=10.0,
+        dy_px=10.0,
+        sensitivity_deg_per_px=1.0,
+    )
+    assert abs(yaw_idle - 3.0) <= 1e-9
+    assert abs(pitch_idle - 4.0) <= 1e-9
+
+
+def test_walk_mode_effective_speed_applies_shift_run_multiplier() -> None:
+    speed_walk = _walk_mode_effective_speed_u_s(
+        base_speed_u_s=6.0,
+        pressed_symbols={87},
+        shift_symbols={340, 344},
+        run_multiplier=1.85,
+    )
+    speed_run = _walk_mode_effective_speed_u_s(
+        base_speed_u_s=6.0,
+        pressed_symbols={87, 340},
+        shift_symbols={340, 344},
+        run_multiplier=1.85,
+    )
+    assert abs(speed_walk - 6.0) <= 1e-9
+    assert abs(speed_run - 11.1) <= 1e-9
+
+
 def test_walk_mode_integrate_xz_uses_fixed_step_and_stable_carry() -> None:
     keys = {"w": 87, "a": 65, "s": 83, "d": 68}
     move_dx, move_dz, carry = _walk_mode_integrate_xz(
@@ -438,7 +792,7 @@ def test_walk_mode_integrate_xz_uses_fixed_step_and_stable_carry() -> None:
         key_d=keys["d"],
     )
     assert abs(move_dx - 0.0) <= 1e-9
-    assert abs(move_dz + 0.4) <= 1e-9
+    assert abs(move_dz + 0.8) <= 1e-9
     assert abs(carry - 0.0) <= 1e-9
 
     # No movement input still consumes fixed-step budget (no catch-up burst later).
@@ -475,6 +829,32 @@ def test_walk_mode_integrate_xz_uses_fixed_step_and_stable_carry() -> None:
     assert abs(dx2 - 0.2) <= 1e-9
     assert abs(dz2 - 0.0) <= 1e-9
     assert abs(carry2 - 0.005) <= 1e-9
+
+
+def test_walk_mode_integrate_xz_keeps_speed_consistent_across_low_fps_dt() -> None:
+    keys = {"w": 87, "a": 65, "s": 83, "d": 68}
+    speed = 6.0
+    dt_values = (1.0 / 60.0, 1.0 / 20.0, 1.0 / 10.0)
+
+    for dt_s in dt_values:
+        move_dx, move_dz, carry = _walk_mode_integrate_xz(
+            pressed_symbols={keys["w"]},
+            yaw_deg=0.0,
+            frame_dt_s=float(dt_s),
+            carry_dt_s=0.0,
+            fixed_dt_s=1.0 / 120.0,
+            max_steps=8,
+            speed_u_per_s=float(speed),
+            key_w=keys["w"],
+            key_a=keys["a"],
+            key_s=keys["s"],
+            key_d=keys["d"],
+        )
+        expected = float(speed) * float(dt_s)
+        actual = math.hypot(float(move_dx), float(move_dz))
+        assert abs(actual - expected) <= 1e-9
+        assert float(move_dz) < 0.0
+        assert 0.0 <= float(carry) < (1.0 / 120.0)
 
 
 def test_walk_mode_point_blocked_checks_voxels_and_env_column() -> None:
@@ -515,6 +895,38 @@ def test_walk_mode_point_blocked_checks_voxels_and_env_column() -> None:
     )
 
 
+def test_walk_mode_body_sample_points_and_blocked_checks() -> None:
+    pts = _walk_mode_body_sample_points(
+        x_u=1.0,
+        y_u=2.0,
+        z_u=3.0,
+        body_radius_u=0.4,
+        body_height_u=1.8,
+    )
+    assert len(pts) == 27
+    assert any(abs(px - 1.4) <= 1e-9 and abs(py - 2.0) <= 1e-9 and abs(pz - 3.0) <= 1e-9 for (px, py, pz) in pts)
+    assert any(abs(px - 1.0) <= 1e-9 and abs(py - 1.1) <= 1e-9 and abs(pz - 3.0) <= 1e-9 for (px, py, pz) in pts)
+
+    blocked = _walk_mode_body_blocked(
+        x_u=1.0,
+        y_u=2.0,
+        z_u=3.0,
+        solid_positions={(1, 1, 3)},
+        body_radius_u=0.4,
+        body_height_u=1.8,
+    )
+    clear = _walk_mode_body_blocked(
+        x_u=1.0,
+        y_u=2.0,
+        z_u=3.0,
+        solid_positions=set(),
+        body_radius_u=0.4,
+        body_height_u=1.8,
+    )
+    assert blocked is True
+    assert clear is False
+
+
 def test_walk_mode_apply_collision_xz_prevents_tunneling_and_allows_clear_motion() -> None:
     blocked_dx, blocked_dz = _walk_mode_apply_collision_xz(
         start_x_u=0.1,
@@ -540,6 +952,37 @@ def test_walk_mode_apply_collision_xz_prevents_tunneling_and_allows_clear_motion
     )
     assert abs(clear_dx - 0.75) <= 1e-9
     assert abs(clear_dz + 0.25) <= 1e-9
+
+
+def test_walk_mode_apply_collision_xz_uses_body_footprint_not_just_center_point() -> None:
+    # Center point is clear (z floors to 0), but radius reaches into z=1 cell.
+    solids = {(1, 1, 1)}
+    center_dx, center_dz = _walk_mode_apply_collision_xz(
+        start_x_u=0.8,
+        start_y_u=1.5,
+        start_z_u=0.7,
+        move_dx_u=0.3,
+        move_dz_u=0.0,
+        solid_positions=solids,
+        max_substep_u=0.1,
+        body_radius_u=0.0,
+        body_height_u=0.0,
+    )
+    body_dx, body_dz = _walk_mode_apply_collision_xz(
+        start_x_u=0.8,
+        start_y_u=1.5,
+        start_z_u=0.7,
+        move_dx_u=0.3,
+        move_dz_u=0.0,
+        solid_positions=solids,
+        max_substep_u=0.1,
+        body_radius_u=0.35,
+        body_height_u=1.8,
+    )
+    assert abs(center_dx - 0.3) <= 1e-9
+    assert abs(center_dz) <= 1e-9
+    assert body_dx < center_dx
+    assert abs(body_dz) <= 1e-9
 
 
 def test_walk_mode_apply_collision_y_prevents_vertical_tunneling() -> None:
@@ -599,6 +1042,70 @@ def test_walk_mode_integrate_y_handles_ground_hold_and_jump_deterministically() 
     assert jump_dy > 0.0
     assert jump_vel > 0.0
     assert abs(jump_carry - 0.0) <= 1e-9
+    assert jump_grounded is False
+    assert jump_pending is False
+
+
+def test_walk_mode_integrate_y_jump_triggers_when_body_is_grounded_by_footprint_probe() -> None:
+    jump_dy, jump_vel, _carry, jump_grounded, jump_pending = _walk_mode_integrate_y(
+        start_x_u=0.25,
+        start_y_u=1.9,
+        start_z_u=0.25,
+        frame_dt_s=0.1,
+        carry_dt_s=0.0,
+        fixed_dt_s=0.1,
+        max_steps=1,
+        vel_y_u_s=0.0,
+        gravity_u_s2=-10.0,
+        jump_speed_u_s=6.0,
+        jump_queued=True,
+        was_grounded=False,
+        solid_positions={(0, 0, 0)},
+        collision_substep_u=0.25,
+        ground_probe_u=0.08,
+    )
+    assert jump_dy > 0.0
+    assert jump_vel > 0.0
+    assert jump_grounded is False
+    assert jump_pending is False
+
+
+def test_walk_mode_jump_and_heading_movement_coexist_deterministically() -> None:
+    keys = {"w": 87, "a": 65, "s": 83, "d": 68}
+    move_dx, move_dz, _move_carry = _walk_mode_integrate_xz(
+        pressed_symbols={keys["w"]},
+        yaw_deg=90.0,
+        frame_dt_s=0.1,
+        carry_dt_s=0.0,
+        fixed_dt_s=0.1,
+        max_steps=1,
+        speed_u_per_s=6.0,
+        key_w=keys["w"],
+        key_a=keys["a"],
+        key_s=keys["s"],
+        key_d=keys["d"],
+    )
+    jump_dy, jump_vel, _carry, jump_grounded, jump_pending = _walk_mode_integrate_y(
+        start_x_u=0.25 + float(move_dx),
+        start_y_u=1.9,
+        start_z_u=0.25 + float(move_dz),
+        frame_dt_s=0.1,
+        carry_dt_s=0.0,
+        fixed_dt_s=0.1,
+        max_steps=1,
+        vel_y_u_s=0.0,
+        gravity_u_s2=-10.0,
+        jump_speed_u_s=6.0,
+        jump_queued=True,
+        was_grounded=False,
+        solid_positions={(0, 0, 0), (1, 0, 0)},
+        collision_substep_u=0.25,
+        ground_probe_u=0.08,
+    )
+    assert move_dx > 0.0
+    assert abs(move_dz) <= 1e-9
+    assert jump_dy > 0.0
+    assert jump_vel > 0.0
     assert jump_grounded is False
     assert jump_pending is False
 
@@ -1941,10 +2448,32 @@ def test_datapack_viewer_walk_mode_scaffold_hooks_present() -> None:
     assert 'toggle_symbol=int(getattr(pyglet.window.key, "W", -1))' in source
     assert "if walk_action == \"exit_escape\":" in source
     assert "self._walk_mode_set_active(False, reason=\"key_escape\")" in source
-    assert 'if int(symbol) == int(getattr(pyglet.window.key, "SPACE", -1)):' in source
+    assert "if int(symbol) == int(walk_jump_symbol):" in source
     assert "self._walk_mode_jump_queued = True" in source
+    assert "if bool(getattr(self, \"_walk_mode_active\", False)) and bool(getattr(self, \"_walk_mode_capture_active\", False)):" in source
+    assert "next_yaw, next_pitch = _walk_mode_mouse_look_delta(" in source
     assert "self.walk_mode_label = pyglet.text.Label(" in source
     assert "WALK MODE ACTIVE  (Esc exits)" in source
+
+
+def test_walk_collision_body_kvalues_and_debug_plumbing_present() -> None:
+    defs_by_key = {d.key: d for d in params_mod.DEFAULT_PARAM_DEFS}
+    assert "walk.body.debug_draw" in defs_by_key
+    assert defs_by_key["walk.body.debug_draw"].is_int is True
+    assert "walk.body.radius.u" in defs_by_key
+    assert "walk.body.height.u" in defs_by_key
+
+    source = _datapack_viewer_source()
+    assert 'param_store.get("walk.body.radius.u")' in source
+    assert 'param_store.get("walk.body.height.u")' in source
+    assert 'param_store.get_int("walk.body.debug_draw")' in source
+    assert "def _draw_walk_collision_body_debug(self) -> None:" in source
+    assert "body_radius_u=float(getattr(self, \"_walk_mode_body_radius_u\", 0.35))" in source
+    assert "body_height_u=float(getattr(self, \"_walk_mode_body_height_u\", 1.8))" in source
+    render_world_source = _render_world_source()
+    assert "draw_walk_body = getattr(self, \"_draw_walk_collision_body_debug\", None)" in render_world_source
+    assert "if callable(draw_walk_body):" in render_world_source
+    assert "draw_walk_body()" in render_world_source
 
 
 def test_datapack_viewer_viewport_toggle_keybind_is_c_chord() -> None:
@@ -1952,7 +2481,7 @@ def test_datapack_viewer_viewport_toggle_keybind_is_c_chord() -> None:
     key_blocks = _source_method_blocks(
         source,
         signature="def on_key_press(self, symbol: int, modifiers: int) -> None:",
-        window=12000,
+        window=18000,
     )
     main_block = next(
         b for b in key_blocks if "_open_additional_viewport_window()" in b and "_toggle_second_viewport_window()" in b
@@ -1969,7 +2498,7 @@ def test_datapack_viewer_escape_and_q_no_longer_quit_main_window() -> None:
     key_blocks = _source_method_blocks(
         source,
         signature="def on_key_press(self, symbol: int, modifiers: int) -> None:",
-        window=12000,
+        window=18000,
     )
     main_block = next(
         b for b in key_blocks if "_open_additional_viewport_window()" in b and "_toggle_second_viewport_window()" in b
@@ -1986,12 +2515,23 @@ def test_datapack_viewer_escape_and_q_no_longer_quit_main_window() -> None:
 def test_datapack_viewer_walk_mode_integrator_updates_orbit_with_vertical_phase() -> None:
     source = _datapack_viewer_source()
     assert "walk_forward_xz = _walk_mode_forward_xz(" in source
+    assert "walk_speed_u_s = _walk_mode_effective_speed_u_s(" in source
+    assert 'walk_forward_xz = _walk_mode_forward_xz(yaw_deg=float(getattr(self, "yaw", 0.0)))' in source
     assert "move_dx, move_dz, move_carry = _walk_mode_integrate_xz(" in source
+    assert "speed_u_per_s=float(walk_speed_u_s)" in source
     assert "forward_xz=walk_forward_xz" in source
     assert "resolved_dx, resolved_dz = _walk_mode_apply_collision_xz(" in source
     assert "move_dy, next_vel_y, next_vertical_carry, next_grounded, jump_pending = _walk_mode_integrate_y(" in source
     assert "self._walk_mode_jump_queued = bool(jump_pending)" in source
     assert "float(oy) + float(move_dy)" in source
+
+
+def test_datapack_viewer_walk_mode_mouse_look_is_wired_to_relative_motion() -> None:
+    source = _datapack_viewer_source()
+    assert "def _apply_walk_mode_mouse_look(self, *, dx_px: float, dy_px: float) -> None:" in source
+    assert "next_yaw, next_pitch = _walk_mode_mouse_look_delta(" in source
+    assert "self._orbit_target = _walk_mode_anchor_orbit_target(" in source
+    assert source.count("self._apply_walk_mode_mouse_look(dx_px=float(dx), dy_px=float(dy))") >= 2
 
 
 def test_datapack_viewer_walk_mode_capture_releases_on_focus_and_tool_window_paths() -> None:

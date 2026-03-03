@@ -24,6 +24,8 @@ _LIGHT0_AMBIENT = (c_float * 4)(0.2, 0.2, 0.2, 1.0)
 _LIGHT0_DIFFUSE = (c_float * 4)(0.9, 0.9, 0.9, 1.0)
 _LIGHT0_POSITION = (c_float * 4)(0.35, 0.9, 0.5, 0.0)
 _PERSPECTIVE_CLIP_NEAR_FLOOR = 1.0e-3
+_PERSPECTIVE_CLIP_NEAR_ENV = 1.0e-2
+_PERSPECTIVE_CLIP_NEAR_WALK = 5.0e-3
 _PERSPECTIVE_CLIP_FAR_CEIL = 20000.0
 _PERSPECTIVE_CLIP_MAX_RATIO = 20000.0
 
@@ -246,6 +248,9 @@ def _draw_world_post_effect_passes(self: Any, *, gl: Any, param_store: Any) -> N
         self._draw_effects()
     self._draw_ender_vision_markers()
     fx_mod.draw_hover_target_box(self, gl=gl, param_store=param_store)
+    draw_walk_body = getattr(self, "_draw_walk_collision_body_debug", None)
+    if callable(draw_walk_body):
+        draw_walk_body()
 
 
 def _resolve_model_bounds_i(self: Any) -> tuple[float, float, float, float, float, float] | None:
@@ -366,6 +371,18 @@ def _resolve_perspective_clip_planes(
     clip_near = float(default_near)
     clip_far = float(default_far)
     try:
+        env_is_space = True
+        try:
+            env_preset_fn = getattr(self, "_env_preset", None)
+            env_obj = env_preset_fn() if callable(env_preset_fn) else None
+            env_is_space = bool(getattr(env_obj, "is_space", lambda: True)())
+        except Exception:
+            env_is_space = True
+        if not bool(env_is_space):
+            clip_near = min(float(clip_near), float(_PERSPECTIVE_CLIP_NEAR_ENV))
+        if bool(getattr(self, "_walk_mode_active", False)):
+            clip_near = min(float(clip_near), float(_PERSPECTIVE_CLIP_NEAR_WALK))
+
         bounds_i = _resolve_model_bounds_i(self)
         if bounds_i is None:
             return (clip_near, clip_far)
@@ -379,16 +396,19 @@ def _resolve_perspective_clip_planes(
         near_floor = float(_PERSPECTIVE_CLIP_NEAR_FLOOR)
         clip_near = min(float(clip_near), max(float(near_floor), float(depth_min) * 0.25))
         margin = max(64.0, float(depth_max) * 0.20)
-        env_extent = max(0.0, float(getattr(self, "_env_ground_radius", 0.0)) * 4.0)
-        desired_far = max(float(depth_max) + float(margin), float(getattr(self, "distance", 0.0)) + env_extent + 64.0)
-        if desired_far < float(default_far):
+        env_extent = max(0.0, float(getattr(self, "_env_ground_radius", 0.0)) * 8.0)
+        desired_far = max(float(depth_max) + float(margin), float(getattr(self, "distance", 0.0)) + env_extent + 128.0)
+        if not bool(env_is_space):
+            desired_far = max(float(desired_far), float(default_far))
+        if bool(env_is_space) and desired_far < float(default_far):
             clip_far = max(float(clip_near) + 8.0, float(desired_far))
         else:
             clip_far = min(float(_PERSPECTIVE_CLIP_FAR_CEIL), max(float(clip_near) + 8.0, float(desired_far)))
 
-        max_ratio = float(_PERSPECTIVE_CLIP_MAX_RATIO)
-        if clip_far / max(1e-9, float(clip_near)) > max_ratio:
-            clip_near = max(float(clip_near), float(clip_far) / max_ratio)
+        if bool(env_is_space):
+            max_ratio = float(_PERSPECTIVE_CLIP_MAX_RATIO)
+            if clip_far / max(1e-9, float(clip_near)) > max_ratio:
+                clip_near = max(float(clip_near), float(clip_far) / max_ratio)
         clip_near = max(float(near_floor), float(clip_near))
         clip_far = max(float(clip_near) + 8.0, float(clip_far))
         return (float(clip_near), float(clip_far))

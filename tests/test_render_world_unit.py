@@ -247,6 +247,42 @@ def test_resolve_perspective_clip_planes_uses_defaults_without_bounds() -> None:
     assert far == CLIP_FAR_DEFAULT
 
 
+def test_resolve_perspective_clip_planes_reduces_near_in_walk_mode_without_bounds() -> None:
+    viewer = _Viewer(effects_enabled=False)
+    viewer._ortho_enabled = False
+    viewer._pick_bounds_i = None
+    viewer._walk_mode_active = True
+    near, far = render_world._resolve_perspective_clip_planes(
+        viewer,
+        default_near=PERSPECTIVE_CLIP_NEAR_DEFAULT,
+        default_far=CLIP_FAR_DEFAULT,
+    )
+    assert near <= 0.005
+    assert far == CLIP_FAR_DEFAULT
+
+
+def test_resolve_perspective_clip_planes_keeps_far_default_for_env() -> None:
+    viewer = _Viewer(effects_enabled=False)
+    viewer._ortho_enabled = False
+    viewer.distance = 8.0
+    viewer._pick_bounds_i = (0, 0, 0, 0, 0, 0)
+
+    class _EnvPreset:
+        @staticmethod
+        def is_space() -> bool:
+            return False
+
+    viewer._env_preset = lambda: _EnvPreset()
+    viewer._env_ground_radius = 12
+    near, far = render_world._resolve_perspective_clip_planes(
+        viewer,
+        default_near=PERSPECTIVE_CLIP_NEAR_DEFAULT,
+        default_far=CLIP_FAR_DEFAULT,
+    )
+    assert near < PERSPECTIVE_CLIP_NEAR_DEFAULT
+    assert far >= CLIP_FAR_DEFAULT
+
+
 def test_resolve_perspective_clip_planes_tightens_far_for_local_scene() -> None:
     viewer = _Viewer(effects_enabled=False)
     viewer._ortho_enabled = False

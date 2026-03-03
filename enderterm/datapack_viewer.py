@@ -358,6 +358,138 @@ def _walk_mode_forward_xz(
     return (-math.sin(yaw_rad), -math.cos(yaw_rad))
 
 
+def _walk_mode_mouse_look_delta(
+    *,
+    active: bool,
+    yaw_deg: float,
+    pitch_deg: float,
+    dx_px: float,
+    dy_px: float,
+    sensitivity_deg_per_px: float,
+    pitch_min_deg: float = -89.0,
+    pitch_max_deg: float = 89.0,
+) -> tuple[float, float]:
+    """Apply relative mouse-look deltas to yaw/pitch for walk mode."""
+    yaw = float(yaw_deg)
+    pitch = float(pitch_deg)
+    if not bool(active):
+        return (yaw, pitch)
+    sens = float(sensitivity_deg_per_px)
+    if (not math.isfinite(sens)) or sens <= 0.0:
+        return (yaw, pitch)
+    dx = float(dx_px)
+    dy = float(dy_px)
+    if (not math.isfinite(dx)) or (not math.isfinite(dy)):
+        return (yaw, pitch)
+    yaw += dx * sens
+    pitch -= dy * sens
+    pitch = max(float(pitch_min_deg), min(float(pitch_max_deg), float(pitch)))
+    return (float(yaw), float(pitch))
+
+
+def _walk_mode_effective_speed_u_s(
+    *,
+    base_speed_u_s: float,
+    pressed_symbols: set[int],
+    shift_symbols: set[int],
+    run_multiplier: float,
+) -> float:
+    """Resolve walk/run speed from pressed modifiers while in walk mode."""
+    speed = float(base_speed_u_s)
+    if (not math.isfinite(speed)) or speed <= 0.0:
+        return 0.0
+    run_mul = float(run_multiplier)
+    if (not math.isfinite(run_mul)) or run_mul <= 0.0:
+        run_mul = 1.0
+    pressed = {int(k) for k in set(pressed_symbols)}
+    shifts = {int(k) for k in set(shift_symbols)}
+    if shifts and any(int(k) in pressed for k in shifts):
+        speed *= run_mul
+    return float(speed)
+
+
+def _walk_mode_anchor_orbit_target(
+    *,
+    orbit_target_u: tuple[float, float, float],
+    anchor_camera_world_u: tuple[float, float, float],
+    camera_world_after_u: tuple[float, float, float],
+) -> tuple[float, float, float]:
+    """Adjust orbit target so camera world position stays anchored after look changes."""
+    ox, oy, oz = float(orbit_target_u[0]), float(orbit_target_u[1]), float(orbit_target_u[2])
+    ax, ay, az = float(anchor_camera_world_u[0]), float(anchor_camera_world_u[1]), float(anchor_camera_world_u[2])
+    bx, by, bz = float(camera_world_after_u[0]), float(camera_world_after_u[1]), float(camera_world_after_u[2])
+    if not all(math.isfinite(v) for v in (ox, oy, oz, ax, ay, az, bx, by, bz)):
+        return (float(ox), float(oy), float(oz))
+    return (float(ox + (ax - bx)), float(oy + (ay - by)), float(oz + (az - bz)))
+
+
+def _walk_mode_body_sample_points(
+    *,
+    x_u: float,
+    y_u: float,
+    z_u: float,
+    body_radius_u: float,
+    body_height_u: float,
+) -> list[tuple[float, float, float]]:
+    """Return deterministic sample points for a capsule-like walk collision body."""
+    cx = float(x_u)
+    cy = float(y_u)
+    cz = float(z_u)
+    radius = max(0.0, float(body_radius_u))
+    height = max(0.0, float(body_height_u))
+    half_h = 0.5 * height
+    y_levels = [0.0]
+    if half_h > 1e-6:
+        y_levels = [-half_h, 0.0, half_h]
+    ring_offsets: list[tuple[float, float]] = [(0.0, 0.0)]
+    if radius > 1e-6:
+        diag = radius / math.sqrt(2.0)
+        ring_offsets.extend(
+            [
+                (radius, 0.0),
+                (-radius, 0.0),
+                (0.0, radius),
+                (0.0, -radius),
+                (diag, diag),
+                (-diag, diag),
+                (diag, -diag),
+                (-diag, -diag),
+            ]
+        )
+    return [(float(cx + ox), float(cy + oy), float(cz + oz)) for oy in y_levels for (ox, oz) in ring_offsets]
+
+
+def _walk_mode_body_blocked(
+    *,
+    x_u: float,
+    y_u: float,
+    z_u: float,
+    solid_positions: set[tuple[int, int, int]] | None,
+    env_top_y_at_xz: Callable[[int, int], int | None] | None = None,
+    env_bottom_y: int | None = None,
+    body_radius_u: float = 0.0,
+    body_height_u: float = 0.0,
+) -> bool:
+    """Return whether sampled walk body points intersect solids or terrain."""
+    for sx, sy, sz in _walk_mode_body_sample_points(
+        x_u=float(x_u),
+        y_u=float(y_u),
+        z_u=float(z_u),
+        body_radius_u=float(body_radius_u),
+        body_height_u=float(body_height_u),
+    ):
+        if _walk_mode_point_blocked(
+            x_u=float(sx),
+            y_u=float(sy),
+            z_u=float(sz),
+            solid_positions=solid_positions,
+            env_top_y_at_xz=env_top_y_at_xz,
+            env_bottom_y=env_bottom_y,
+        ):
+            return True
+    return False
+
+
 def _walk_mode_integrate_xz(
     *,
     pressed_symbols: set[int],
@@ -380,12 +512,17 @@ def _walk_mode_integrate_xz(
     step_limit = max(1, int(max_steps))
     dt_s = max(0.0, float(frame_dt_s))
     carry_s = max(0.0, float(carry_dt_s))
-    # Bound catch-up work to keep motion stable after a stall.
-    carry_s = min(carry_s + dt_s, float(step_limit) * step_s)
-    steps = min(step_limit, int(carry_s / step_s))
+    carry_s += dt_s
+    # Keep low-FPS motion speed-consistent by allowing enough fixed steps to
+    # cover the current frame's dt, while still bounding worst-case stalls.
+    burst_limit = max(step_limit, step_limit * 8)
+    frame_steps = int(dt_s / step_s)
+    effective_limit = max(step_limit, min(burst_limit, frame_steps))
+    steps = min(effective_limit, int(carry_s / step_s))
     if steps <= 0:
         return (0.0, 0.0, carry_s)
     carry_s = max(0.0, carry_s - float(steps) * step_s)
+    carry_s = min(carry_s, float(burst_limit) * step_s)
 
     speed = float(speed_u_per_s)
     if (not math.isfinite(speed)) or speed <= 0.0:
@@ -453,6 +590,8 @@ def _walk_mode_apply_collision_xz(
     env_top_y_at_xz: Callable[[int, int], int | None] | None = None,
     env_bottom_y: int | None = None,
     max_substep_u: float,
+    body_radius_u: float = 0.0,
+    body_height_u: float = 0.0,
 ) -> tuple[float, float]:
     """Resolve an XZ movement delta using deterministic substep collision checks."""
     dx = float(move_dx_u)
@@ -474,13 +613,15 @@ def _walk_mode_apply_collision_xz(
     for _ in range(int(substeps)):
         next_x = cur_x + float(step_dx)
         next_z = cur_z + float(step_dz)
-        if _walk_mode_point_blocked(
-            x_u=next_x,
-            y_u=y_u,
-            z_u=next_z,
+        if _walk_mode_body_blocked(
+            x_u=float(next_x),
+            y_u=float(y_u),
+            z_u=float(next_z),
             solid_positions=solid_positions,
             env_top_y_at_xz=env_top_y_at_xz,
             env_bottom_y=env_bottom_y,
+            body_radius_u=float(body_radius_u),
+            body_height_u=float(body_height_u),
         ):
             break
         cur_x = float(next_x)
@@ -498,6 +639,8 @@ def _walk_mode_apply_collision_y(
     env_top_y_at_xz: Callable[[int, int], int | None] | None = None,
     env_bottom_y: int | None = None,
     max_substep_u: float,
+    body_radius_u: float = 0.0,
+    body_height_u: float = 0.0,
 ) -> tuple[float, bool]:
     """Resolve a Y movement delta with deterministic collision substeps."""
     dy = float(move_dy_u)
@@ -513,13 +656,15 @@ def _walk_mode_apply_collision_y(
     cur_y = float(start_y_u)
     for _ in range(int(substeps)):
         next_y = cur_y + float(step_dy)
-        if _walk_mode_point_blocked(
+        if _walk_mode_body_blocked(
             x_u=float(start_x_u),
-            y_u=next_y,
+            y_u=float(next_y),
             z_u=float(start_z_u),
             solid_positions=solid_positions,
             env_top_y_at_xz=env_top_y_at_xz,
             env_bottom_y=env_bottom_y,
+            body_radius_u=float(body_radius_u),
+            body_height_u=float(body_height_u),
         ):
             return (float(cur_y - float(start_y_u)), True)
         cur_y = float(next_y)
@@ -545,6 +690,9 @@ def _walk_mode_integrate_y(
     env_bottom_y: int | None = None,
     collision_substep_u: float = 0.25,
     ground_probe_u: float = 0.08,
+    body_radius_u: float = 0.0,
+    body_height_u: float = 0.0,
+    ground_probe_offset_u: float = 0.9,
 ) -> tuple[float, float, float, bool, bool]:
     """Integrate deterministic vertical walk movement with gravity and jump."""
     step_s = float(fixed_dt_s)
@@ -571,15 +719,20 @@ def _walk_mode_integrate_y(
     grounded = bool(was_grounded)
     jump_pending = bool(jump_queued)
     probe_u = max(1e-4, float(ground_probe_u))
+    probe_offset_u = float(ground_probe_offset_u)
+    if (not math.isfinite(probe_offset_u)) or probe_offset_u < 0.0:
+        probe_offset_u = 0.0
 
     for _ in range(int(steps)):
-        if _walk_mode_point_blocked(
+        if _walk_mode_body_blocked(
             x_u=float(start_x_u),
-            y_u=float(y_u) - float(probe_u),
+            y_u=float(y_u) - float(probe_u) - float(probe_offset_u),
             z_u=float(start_z_u),
             solid_positions=solid_positions,
             env_top_y_at_xz=env_top_y_at_xz,
             env_bottom_y=env_bottom_y,
+            body_radius_u=float(body_radius_u),
+            body_height_u=0.0,
         ) and float(vel_y) <= 0.0:
             grounded = True
             vel_y = 0.0
@@ -602,6 +755,8 @@ def _walk_mode_integrate_y(
             env_top_y_at_xz=env_top_y_at_xz,
             env_bottom_y=env_bottom_y,
             max_substep_u=float(collision_substep_u),
+            body_radius_u=float(body_radius_u),
+            body_height_u=float(body_height_u),
         )
         y_u += float(resolved_dy)
         if hit:
@@ -4062,12 +4217,20 @@ def view_datapack_opengl(  # pragma: no cover
                 self._walk_mode_move_fixed_step_s = 1.0 / 120.0
                 self._walk_mode_move_max_steps = 8
                 self._walk_mode_move_speed_u_s = 6.0
+                self._walk_mode_run_multiplier = 1.85
                 self._walk_mode_collision_substep_u = 0.25
+                self._walk_mode_mouse_sensitivity_deg_px = 0.22
+                self._walk_mode_pitch_min_deg = -89.0
+                self._walk_mode_pitch_max_deg = 89.0
+                self._walk_mode_body_radius_u = 0.35
+                self._walk_mode_body_height_u = 1.8
+                self._walk_mode_body_debug_draw = False
                 self._walk_mode_vertical_accum_s = 0.0
                 self._walk_mode_vertical_vel_u_s = 0.0
                 self._walk_mode_gravity_u_s2 = -24.0
                 self._walk_mode_jump_speed_u_s = 8.0
                 self._walk_mode_ground_probe_u = 0.08
+                self._walk_mode_ground_probe_offset_u = 0.9
                 self._walk_mode_grounded = False
                 self._walk_mode_jump_queued = False
                 self._build_hover_pick_enabled = bool(params_mod.hover_pick_enabled(param_store))
@@ -11071,6 +11234,40 @@ def view_datapack_opengl(  # pragma: no cover
                     self._walk_mode_grounded = False
                     self._walk_mode_jump_queued = False
 
+            def _apply_walk_mode_mouse_look(self, *, dx_px: float, dy_px: float) -> None:
+                anchor_world: tuple[float, float, float] | None = None
+                try:
+                    anchor_world = tuple(float(v) for v in self._camera_world_position())
+                except Exception:
+                    anchor_world = None
+                next_yaw, next_pitch = _walk_mode_mouse_look_delta(
+                    active=bool(getattr(self, "_walk_mode_active", False)),
+                    yaw_deg=float(getattr(self, "yaw", 0.0)),
+                    pitch_deg=float(getattr(self, "pitch", 0.0)),
+                    dx_px=float(dx_px),
+                    dy_px=float(dy_px),
+                    sensitivity_deg_per_px=float(getattr(self, "_walk_mode_mouse_sensitivity_deg_px", 0.22)),
+                    pitch_min_deg=float(getattr(self, "_walk_mode_pitch_min_deg", -89.0)),
+                    pitch_max_deg=float(getattr(self, "_walk_mode_pitch_max_deg", 89.0)),
+                )
+                if abs(float(next_yaw) - float(getattr(self, "yaw", 0.0))) <= 1e-9 and abs(
+                    float(next_pitch) - float(getattr(self, "pitch", 0.0))
+                ) <= 1e-9:
+                    return
+                self.yaw = float(next_yaw)
+                self.pitch = float(next_pitch)
+                if anchor_world is not None:
+                    try:
+                        after_world = tuple(float(v) for v in self._camera_world_position())
+                        self._orbit_target = _walk_mode_anchor_orbit_target(
+                            orbit_target_u=tuple(float(v) for v in self._orbit_target),
+                            anchor_camera_world_u=tuple(float(v) for v in anchor_world),
+                            camera_world_after_u=tuple(float(v) for v in after_world),
+                        )
+                    except Exception:
+                        pass
+                self._mark_camera_user_input()
+
             def _camera_modifier_active(self, modifiers: int) -> bool:
                 return bool(modifiers & pyglet.window.key.MOD_OPTION)
 
@@ -11654,7 +11851,9 @@ def view_datapack_opengl(  # pragma: no cover
                     )
                 ]
                 if bool(getattr(self, "_walk_mode_active", False)):
-                    lines.append("WALK MODE ACTIVE: Esc exits   W/A/S/D move  Space jump  gravity+collision enabled")
+                    lines.append(
+                        "WALK MODE ACTIVE: Esc exits   mouse look + W/A/S/D move   Shift run   Space jump   gravity+collision enabled"
+                    )
                 if depth:
                     lines.append(f"seed: 0x{self.jigsaw_seeds[-1]:08x}   (Space reroll)")
                 else:
@@ -12094,6 +12293,26 @@ def view_datapack_opengl(  # pragma: no cover
                         self._repeat_next_at_s = now + float(self._repeat_rate_s)
                 self._sync_ui_palette()
                 self._tick_camera_tween()
+                try:
+                    walk_body_radius = float(param_store.get("walk.body.radius.u"))
+                except Exception:
+                    walk_body_radius = float(getattr(self, "_walk_mode_body_radius_u", 0.35))
+                if (not math.isfinite(walk_body_radius)) or walk_body_radius <= 0.01:
+                    walk_body_radius = 0.35
+                walk_body_radius = min(3.0, float(walk_body_radius))
+                self._walk_mode_body_radius_u = float(walk_body_radius)
+                try:
+                    walk_body_height = float(param_store.get("walk.body.height.u"))
+                except Exception:
+                    walk_body_height = float(getattr(self, "_walk_mode_body_height_u", 1.8))
+                if (not math.isfinite(walk_body_height)) or walk_body_height <= 0.05:
+                    walk_body_height = 1.8
+                walk_body_height = min(6.0, float(walk_body_height))
+                self._walk_mode_body_height_u = float(walk_body_height)
+                try:
+                    self._walk_mode_body_debug_draw = bool(int(param_store.get_int("walk.body.debug_draw")))
+                except Exception:
+                    self._walk_mode_body_debug_draw = False
                 if bool(getattr(self, "_walk_mode_active", False)):
                     cam_x, cam_y, cam_z = _viewport_camera_world_position(self)
                     solids = self._rez_live_positions if self._rez_active else self._pick_positions
@@ -12106,10 +12325,15 @@ def view_datapack_opengl(  # pragma: no cover
                     except Exception:
                         env_top_lookup = None
                         env_bottom_y = None
-                    walk_forward_xz = _walk_mode_forward_xz(
-                        yaw_deg=float(getattr(self, "yaw", 0.0)),
-                        orbit_target=tuple(getattr(self, "_orbit_target", (0.0, 0.0, 0.0))),
-                        camera_world=(float(cam_x), float(cam_y), float(cam_z)),
+                    walk_forward_xz = _walk_mode_forward_xz(yaw_deg=float(getattr(self, "yaw", 0.0)))
+                    walk_speed_u_s = _walk_mode_effective_speed_u_s(
+                        base_speed_u_s=float(getattr(self, "_walk_mode_move_speed_u_s", 6.0)),
+                        pressed_symbols=set(getattr(self, "_walk_mode_scaffold_pressed", set())),
+                        shift_symbols={
+                            int(getattr(pyglet.window.key, "LSHIFT", -1)),
+                            int(getattr(pyglet.window.key, "RSHIFT", -1)),
+                        },
+                        run_multiplier=float(getattr(self, "_walk_mode_run_multiplier", 1.0)),
                     )
                     move_dx, move_dz, move_carry = _walk_mode_integrate_xz(
                         pressed_symbols=set(getattr(self, "_walk_mode_scaffold_pressed", set())),
@@ -12119,7 +12343,7 @@ def view_datapack_opengl(  # pragma: no cover
                         carry_dt_s=float(getattr(self, "_walk_mode_move_accum_s", 0.0)),
                         fixed_dt_s=float(getattr(self, "_walk_mode_move_fixed_step_s", 1.0 / 120.0)),
                         max_steps=int(getattr(self, "_walk_mode_move_max_steps", 8)),
-                        speed_u_per_s=float(getattr(self, "_walk_mode_move_speed_u_s", 6.0)),
+                        speed_u_per_s=float(walk_speed_u_s),
                         key_w=int(getattr(pyglet.window.key, "W", -1)),
                         key_a=int(getattr(pyglet.window.key, "A", -1)),
                         key_s=int(getattr(pyglet.window.key, "S", -1)),
@@ -12139,6 +12363,8 @@ def view_datapack_opengl(  # pragma: no cover
                             env_top_y_at_xz=env_top_lookup,
                             env_bottom_y=env_bottom_y,
                             max_substep_u=float(getattr(self, "_walk_mode_collision_substep_u", 0.25)),
+                            body_radius_u=float(getattr(self, "_walk_mode_body_radius_u", 0.35)),
+                            body_height_u=float(getattr(self, "_walk_mode_body_height_u", 1.8)),
                         )
                     next_cam_x = float(cam_x) + float(resolved_dx)
                     next_cam_z = float(cam_z) + float(resolved_dz)
@@ -12160,6 +12386,9 @@ def view_datapack_opengl(  # pragma: no cover
                         env_bottom_y=env_bottom_y,
                         collision_substep_u=float(getattr(self, "_walk_mode_collision_substep_u", 0.25)),
                         ground_probe_u=float(getattr(self, "_walk_mode_ground_probe_u", 0.08)),
+                        body_radius_u=float(getattr(self, "_walk_mode_body_radius_u", 0.35)),
+                        body_height_u=float(getattr(self, "_walk_mode_body_height_u", 1.8)),
+                        ground_probe_offset_u=float(getattr(self, "_walk_mode_ground_probe_offset_u", 0.9)),
                     )
                     self._walk_mode_vertical_vel_u_s = float(next_vel_y)
                     self._walk_mode_vertical_accum_s = float(next_vertical_carry)
@@ -12642,6 +12871,9 @@ def view_datapack_opengl(  # pragma: no cover
             def on_mouse_motion(self, x: int, y: int, dx: int, dy: int) -> None:
                 self._mouse_x = int(x)
                 self._mouse_y = int(y)
+                if bool(getattr(self, "_walk_mode_active", False)) and bool(getattr(self, "_walk_mode_capture_active", False)):
+                    self._apply_walk_mode_mouse_look(dx_px=float(dx), dy_px=float(dy))
+                    return
                 self._update_hover_cursor()
 
             def on_mouse_drag(self, x: int, y: int, dx: int, dy: int, buttons: int, modifiers: int) -> None:
@@ -12721,7 +12953,11 @@ def view_datapack_opengl(  # pragma: no cover
                         self.invalid = True
                     if route.consumed:
                         return
+                if bool(getattr(self, "_walk_mode_active", False)) and bool(getattr(self, "_walk_mode_capture_active", False)):
+                    self._apply_walk_mode_mouse_look(dx_px=float(dx), dy_px=float(dy))
+                    return
                 if bool(getattr(self, "_walk_mode_active", False)) and x >= self.sidebar_width:
+                    self._apply_walk_mode_mouse_look(dx_px=float(dx), dy_px=float(dy))
                     return
                 if x < self.sidebar_width:
                     return
@@ -13121,6 +13357,18 @@ def view_datapack_opengl(  # pragma: no cover
                 except Exception:
                     pass
                 cmd_mod = getattr(pyglet.window.key, "MOD_COMMAND", 0) | getattr(pyglet.window.key, "MOD_ACCEL", 0)
+                walk_scaffold_symbols = {
+                    int(getattr(pyglet.window.key, "W", -1)),
+                    int(getattr(pyglet.window.key, "A", -1)),
+                    int(getattr(pyglet.window.key, "S", -1)),
+                    int(getattr(pyglet.window.key, "D", -1)),
+                    int(getattr(pyglet.window.key, "SPACE", -1)),
+                    int(getattr(pyglet.window.key, "LCTRL", -1)),
+                    int(getattr(pyglet.window.key, "RCTRL", -1)),
+                    int(getattr(pyglet.window.key, "LSHIFT", -1)),
+                    int(getattr(pyglet.window.key, "RSHIFT", -1)),
+                }
+                walk_jump_symbol = int(getattr(pyglet.window.key, "SPACE", -1))
                 walk_action = _walk_mode_key_action(
                     active=bool(getattr(self, "_walk_mode_active", False)),
                     symbol=int(symbol),
@@ -13128,22 +13376,16 @@ def view_datapack_opengl(  # pragma: no cover
                     toggle_symbol=int(getattr(pyglet.window.key, "W", -1)),
                     escape_symbol=int(pyglet.window.key.ESCAPE),
                     cmd_mod=int(cmd_mod),
-                    scaffold_symbols={
-                        int(getattr(pyglet.window.key, "W", -1)),
-                        int(getattr(pyglet.window.key, "A", -1)),
-                        int(getattr(pyglet.window.key, "S", -1)),
-                        int(getattr(pyglet.window.key, "D", -1)),
-                        int(getattr(pyglet.window.key, "SPACE", -1)),
-                        int(getattr(pyglet.window.key, "LCTRL", -1)),
-                        int(getattr(pyglet.window.key, "RCTRL", -1)),
-                        int(getattr(pyglet.window.key, "LSHIFT", -1)),
-                        int(getattr(pyglet.window.key, "RSHIFT", -1)),
-                    },
+                    scaffold_symbols=set(walk_scaffold_symbols),
                 )
                 if walk_action == "toggle_on" and bool(self._search_active):
                     walk_action = "pass"
                 if walk_action == "toggle_on":
                     self._walk_mode_set_active(True, reason="key_toggle")
+                    if int(symbol) in walk_scaffold_symbols:
+                        self._walk_mode_scaffold_pressed.add(int(symbol))
+                        if int(symbol) == int(walk_jump_symbol):
+                            self._walk_mode_jump_queued = True
                     return
                 if walk_action == "toggle_off":
                     self._walk_mode_set_active(False, reason="key_toggle")
@@ -13153,7 +13395,7 @@ def view_datapack_opengl(  # pragma: no cover
                     return
                 if walk_action == "consume_scaffold":
                     self._walk_mode_scaffold_pressed.add(int(symbol))
-                    if int(symbol) == int(getattr(pyglet.window.key, "SPACE", -1)):
+                    if int(symbol) == int(walk_jump_symbol):
                         self._walk_mode_jump_queued = True
                     return
                 if symbol == pyglet.window.key.TAB:
@@ -13995,6 +14237,67 @@ def view_datapack_opengl(  # pragma: no cover
 
             def _draw_rez_live_preview_chunks(self) -> None:
                 fx_mod.draw_rez_live_preview_chunks(self, gl=gl, param_store=param_store)
+
+            def _draw_walk_collision_body_debug(self) -> None:
+                if not bool(getattr(self, "_walk_mode_body_debug_draw", False)):
+                    return
+                if not bool(getattr(self, "_walk_mode_active", False)):
+                    return
+                try:
+                    center_x, center_y, center_z = self._camera_world_position()
+                except Exception:
+                    return
+                radius = max(0.01, float(getattr(self, "_walk_mode_body_radius_u", 0.35)))
+                half_h = 0.5 * max(0.05, float(getattr(self, "_walk_mode_body_height_u", 1.8)))
+                segs = 20
+                try:
+                    gl.glDisable(gl.GL_TEXTURE_2D)
+                except Exception:
+                    pass
+                try:
+                    gl.glDisable(gl.GL_LIGHTING)
+                except Exception:
+                    pass
+                try:
+                    gl.glDisable(gl.GL_CULL_FACE)
+                except Exception:
+                    pass
+                try:
+                    gl.glEnable(gl.GL_DEPTH_TEST)
+                    gl.glDepthMask(gl.GL_FALSE)
+                except Exception:
+                    pass
+                try:
+                    gl.glLineWidth(1.5)
+                except Exception:
+                    pass
+                try:
+                    gl.glColor4f(0.15, 1.0, 0.2, 0.9)
+                    for y_off in (-half_h, 0.0, half_h):
+                        gl.glBegin(gl.GL_LINE_LOOP)
+                        for i in range(int(segs)):
+                            a = (2.0 * math.pi * float(i)) / float(segs)
+                            gl.glVertex3f(
+                                float(center_x + math.cos(a) * radius),
+                                float(center_y + y_off),
+                                float(center_z + math.sin(a) * radius),
+                            )
+                        gl.glEnd()
+                    gl.glBegin(gl.GL_LINES)
+                    for a in (0.0, math.pi * 0.5, math.pi, math.pi * 1.5):
+                        ox = math.cos(a) * radius
+                        oz = math.sin(a) * radius
+                        gl.glVertex3f(float(center_x + ox), float(center_y - half_h), float(center_z + oz))
+                        gl.glVertex3f(float(center_x + ox), float(center_y + half_h), float(center_z + oz))
+                    gl.glColor4f(1.0, 1.0, 0.1, 0.9)
+                    gl.glVertex3f(float(center_x), float(center_y), float(center_z))
+                    gl.glVertex3f(float(center_x), float(center_y), float(center_z - radius * 1.6))
+                    gl.glEnd()
+                finally:
+                    try:
+                        gl.glDepthMask(gl.GL_TRUE)
+                    except Exception:
+                        pass
 
             def _draw_world_3d(self, *, aspect: float) -> None:
                 render_world_mod.draw_world_3d(

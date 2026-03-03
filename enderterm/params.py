@@ -266,6 +266,17 @@ DEFAULT_PARAM_DEFS: list[ParamDef] = [
         is_int=True,
         fmt="{:.0f}",
     ),
+    ParamDef(
+        "walk.body.debug_draw",
+        "Walk collision body debug draw (1=on, 0=off)",
+        0,
+        0,
+        1,
+        is_int=True,
+        fmt="{:.0f}",
+    ),
+    ParamDef("walk.body.radius.u", "Walk collision body radius (units)", 0.35, 0.01, 3.0),
+    ParamDef("walk.body.height.u", "Walk collision body height (units)", 1.8, 0.05, 6.0),
     ParamDef("render.alpha_cutout.threshold", "Alpha cutout threshold", 0.5, 0.00, 1.00),
     ParamDef("camera.autoframe.cooldown_s", "Camera autoframe cooldown (s)", 5.0, 0.0, 60.0),
     ParamDef(
@@ -717,6 +728,21 @@ DEFAULT_PARAM_HELP: dict[str, str] = {
         "Controls continuous hover picking raycasts used for build hover highlights.\n"
         "1 keeps hover targeting on; 0 disables hover picking while preserving click-to-place/break behavior.\n"
         "This is kValue-only and defaults to 1."
+    ),
+    "walk.body.debug_draw": (
+        "Renders the walk collision body in the 3D viewport while walk mode is active.\n"
+        "1 draws a green wireframe capsule-like body around the walk camera; 0 hides it.\n"
+        "Use this to visually debug collisions, clipping, and body placement."
+    ),
+    "walk.body.radius.u": (
+        "Horizontal radius (in world units) of the walk collision body.\n"
+        "Increase if you clip through corners; decrease for tighter navigation.\n"
+        "Typical values are 0.25–0.45."
+    ),
+    "walk.body.height.u": (
+        "Vertical height (in world units) of the walk collision body.\n"
+        "Increase for taller collision; decrease for tighter underhang clearance.\n"
+        "Typical values are 1.6–2.0."
     ),
     "render.alpha_cutout.threshold": (
         "Cuts masked textures (plants, fences, grates) into “on/off” pixels like Minecraft.\n"
